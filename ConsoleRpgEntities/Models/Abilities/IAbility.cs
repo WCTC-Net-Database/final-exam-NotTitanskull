@@ -1,7 +1,7 @@
 ﻿using ConsoleRpgEntities.Models.Attributes;
 using ConsoleRpgEntities.Models.Characters;
 
-namespace ConsoleRpgEntities.Models.Abilities.PlayerAbilities;
+namespace ConsoleRpgEntities.Models.Abilities;
 
 public interface IAbility
 {

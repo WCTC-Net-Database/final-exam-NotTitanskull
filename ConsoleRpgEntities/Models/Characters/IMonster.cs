@@ -1,6 +1,6 @@
 ﻿using ConsoleRpgEntities.Models.Attributes;
 
-namespace ConsoleRpgEntities.Models.Characters.Monsters;
+namespace ConsoleRpgEntities.Models.Characters;
 
 public interface IMonster
 {

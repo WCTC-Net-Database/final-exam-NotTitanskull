@@ -1,4 +1,4 @@
-﻿using ConsoleRpgEntities.Models.Abilities.PlayerAbilities;
+﻿using ConsoleRpgEntities.Models.Abilities;
 using ConsoleRpgEntities.Models.Attributes;
 using System.ComponentModel.DataAnnotations;
 using ConsoleRpgEntities.Models.Equipments;
