@@ -1,4 +1,5 @@
 using ConsoleRpgEntities.Data;
+using ConsoleRpgEntities.Models.Abilities;
 using ConsoleRpgEntities.Models.Characters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -215,7 +216,7 @@ public class AdminService
     #region C-Level Requirements
 
     /// <summary>
-    /// TODO: Implement this method
+    /// Implement this method
     /// Requirements:
     /// - Display a list of existing characters
     /// - Prompt user to select a character (by ID)
@@ -228,14 +229,116 @@ public class AdminService
     /// </summary>
     public void AddAbilityToCharacter()
     {
-        _logger.LogInformation("User selected Add Ability to Character");
-        AnsiConsole.MarkupLine("[yellow]=== Add Ability to Character ===[/]");
+        try
+        {
 
-        // TODO: Implement this method
-        AnsiConsole.MarkupLine("[red]This feature is not yet implemented.[/]");
-        AnsiConsole.MarkupLine("[yellow]TODO: Allow users to add abilities to existing characters.[/]");
 
-        PressAnyKey();
+            _logger.LogInformation("User selected Add Ability to Character");
+            AnsiConsole.MarkupLine("[yellow]=== Add Ability to Character ===[/]");
+
+            // TODO: Implement this method
+            var players = _context.Players.Include(p => p.Abilities).ToList();
+
+            if (!players.Any())
+            {
+                AnsiConsole.MarkupLine("[red]No characters found in database.[/]");
+                PressAnyKey();
+                return;
+            }
+
+            var characterTable = new Table();
+            characterTable.AddColumn("ID");
+            characterTable.AddColumn("Name");
+            characterTable.AddColumn("Health");
+            characterTable.AddColumn("Current Abilities");
+
+            foreach (var p in players)
+            {
+                characterTable.AddRow(
+                    p.Id.ToString(),
+                    p.Name,
+                    p.Health.ToString(),
+                    p.Abilities?.Count.ToString() ?? "0"
+                );
+            }
+
+            AnsiConsole.Write(characterTable);
+
+            var characterId = AnsiConsole.Ask<int>("Enter character [green]ID[/]:");
+            var player = _context.Players
+                .Include(p => p.Abilities)
+                .FirstOrDefault(p => p.Id == characterId);
+
+            if (player == null)
+            {
+                _logger.LogWarning("Character with ID {Id} not found", characterId);
+                AnsiConsole.MarkupLine($"[red]Character with ID {characterId} not found.[/]");
+                PressAnyKey();
+                return;
+            }
+
+            var abilities = _context.Abilities.ToList();
+
+            if (!abilities.Any())
+            {
+                AnsiConsole.MarkupLine("[red]No abilities found in database[/]");
+                PressAnyKey();
+                return;
+            }
+
+            var abilityTable = new Table();
+            abilityTable.AddColumn("ID");
+            abilityTable.AddColumn("Name");
+            abilityTable.AddColumn("Description");
+
+            foreach (var ability in abilities)
+            {
+                abilityTable.AddRow(
+                    ability.Id.ToString(),
+                    ability.Name,
+                    ability.Description ?? "N/A"
+                );
+            }
+
+            AnsiConsole.Write(abilityTable);
+
+            var abilityId = AnsiConsole.Ask<int>("Enter ability [green]ID[/] to add:");
+            var selectedAbility = _context.Abilities.Find(abilityId);
+
+            if (selectedAbility == null)
+            {
+                _logger.LogWarning("Ability with ID {Id} not found", abilityId);
+                AnsiConsole.MarkupLine($"[red]Ability with ID {abilityId} not found.[/]");
+                PressAnyKey();
+                return;
+            }
+
+            if (player.Abilities.Any(a => a.Id == abilityId))
+            {
+                AnsiConsole.MarkupLine(
+                    $"[yellow]Character '{player.Name}' already has ability '{selectedAbility.Name}'.[/]");
+                PressAnyKey();
+                return;
+            }
+
+            player.Abilities ??= new List<Ability>();
+            player.Abilities.Add(selectedAbility);
+            _context.SaveChanges();
+
+            _logger.LogInformation("Added ability {AbilityName} to character {CharacterName} (ID: {Id})",
+                selectedAbility.Name, player.Name, player.Id);
+            AnsiConsole.MarkupLine(
+                $"[green]Successfully added ability '{selectedAbility.Name}' to character '{player.Name}'.[/]");
+            Thread.Sleep(1000);
+            // AnsiConsole.MarkupLine("[red]This feature is not yet implemented.[/]");
+            // AnsiConsole.MarkupLine("[yellow]TODO: Allow users to add abilities to existing characters.[/]");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error adding ability to character");
+            AnsiConsole.MarkupLine($"[red]Error adding ability: {ex.Message}[/]");
+            PressAnyKey();
+        }
     }
 
     /// <summary>
