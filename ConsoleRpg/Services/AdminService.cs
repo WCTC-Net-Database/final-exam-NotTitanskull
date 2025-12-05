@@ -235,8 +235,7 @@ public class AdminService
 
             _logger.LogInformation("User selected Add Ability to Character");
             AnsiConsole.MarkupLine("[yellow]=== Add Ability to Character ===[/]");
-
-            // TODO: Implement this method
+            
             var players = _context.Players.Include(p => p.Abilities).ToList();
 
             if (!players.Any())
@@ -330,8 +329,7 @@ public class AdminService
             AnsiConsole.MarkupLine(
                 $"[green]Successfully added ability '{selectedAbility.Name}' to character '{player.Name}'.[/]");
             Thread.Sleep(1000);
-            // AnsiConsole.MarkupLine("[red]This feature is not yet implemented.[/]");
-            // AnsiConsole.MarkupLine("[yellow]TODO: Allow users to add abilities to existing characters.[/]");
+
         }
         catch (Exception ex)
         {
@@ -342,7 +340,7 @@ public class AdminService
     }
 
     /// <summary>
-    /// TODO: Implement this method
+    /// Implement this method
     /// Requirements:
     /// - Prompt the user to select a character (by ID or name)
     /// - Retrieve the character and their abilities from the database (use Include or lazy loading)
@@ -354,14 +352,87 @@ public class AdminService
     /// </summary>
     public void DisplayCharacterAbilities()
     {
-        _logger.LogInformation("User selected Display Character Abilities");
-        AnsiConsole.MarkupLine("[yellow]=== Display Character Abilities ===[/]");
+        try
+        {
+            _logger.LogInformation("User selected Display Character Abilities");
+            AnsiConsole.MarkupLine("[yellow]=== Display Character Abilities ===[/]");
 
-        // TODO: Implement this method
-        AnsiConsole.MarkupLine("[red]This feature is not yet implemented.[/]");
-        AnsiConsole.MarkupLine("[yellow]TODO: Display all abilities for a selected character.[/]");
+            var players = _context.Players.Include(p => p.Abilities).ToList();
 
-        PressAnyKey();
+            if (!players.Any())
+            {
+                AnsiConsole.MarkupLine("[red]No characters found in database.[/]");
+                PressAnyKey();
+                return;
+            }
+            
+            var characterTable = new Table();
+            characterTable.AddColumn("ID");
+            characterTable.AddColumn("Name");
+            characterTable.AddColumn("Health");
+            characterTable.AddColumn("Experience");
+
+            foreach (var p in players)
+            {
+                characterTable.AddRow(
+                    p.Id.ToString(),
+                    p.Name,
+                    p.Health.ToString(),
+                    p.Experience.ToString()
+                );
+            }
+            
+            AnsiConsole.Write(characterTable);
+            
+            var characterId = AnsiConsole.Ask<int>("Enter character [green]ID[/]:");
+            var player = _context.Players
+                .Include(p => p.Abilities)
+                .FirstOrDefault(p => p.Id == characterId);
+
+            if (player == null)
+            {
+                _logger.LogWarning("Character with ID {Id} not found", characterId);
+                AnsiConsole.MarkupLine($"[red]Character with ID {characterId} not found.[/]");
+                PressAnyKey();
+                return;
+            }
+
+            AnsiConsole.MarkupLine($"\n[cyan]{player.Name}[/] - HP: {player.Health} | XP: {player.Experience}");
+            AnsiConsole.WriteLine();
+
+            if (!player.Abilities.Any())
+            {
+                AnsiConsole.MarkupLine($"[yellow]Character '{player.Name}' has no abilities.[/]");
+            }
+            else
+            {
+                var abilityTable = new Table();
+                abilityTable.AddColumn("Name");
+                abilityTable.AddColumn("Description");
+                abilityTable.AddColumn("Type");
+                foreach (var ability in player.Abilities)
+                {
+                    var type = ability.GetType().Name;
+                    abilityTable.AddRow(
+                        ability.Name,
+                        ability.Description ?? "N/A",
+                        type
+                    );
+                }
+
+                AnsiConsole.Write(abilityTable);
+                _logger.LogInformation("Displayed {Count} abilities for {CharacterName} (ID: {Id}",
+                    player.Abilities.Count, player.Name, player.Id);
+            }
+            
+            PressAnyKey(); 
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error displaying character abilities");
+            AnsiConsole.MarkupLine($"[red]Error displaying abilities: {ex.Message}[/]");
+            PressAnyKey();
+        }
     }
 
     #endregion
