@@ -231,11 +231,9 @@ public class AdminService
     {
         try
         {
-
-
             _logger.LogInformation("User selected Add Ability to Character");
             AnsiConsole.MarkupLine("[yellow]=== Add Ability to Character ===[/]");
-            
+
             var players = _context.Players.Include(p => p.Abilities).ToList();
 
             if (!players.Any())
@@ -329,7 +327,6 @@ public class AdminService
             AnsiConsole.MarkupLine(
                 $"[green]Successfully added ability '{selectedAbility.Name}' to character '{player.Name}'.[/]");
             Thread.Sleep(1000);
-
         }
         catch (Exception ex)
         {
@@ -365,7 +362,7 @@ public class AdminService
                 PressAnyKey();
                 return;
             }
-            
+
             var characterTable = new Table();
             characterTable.AddColumn("ID");
             characterTable.AddColumn("Name");
@@ -381,9 +378,9 @@ public class AdminService
                     p.Experience.ToString()
                 );
             }
-            
+
             AnsiConsole.Write(characterTable);
-            
+
             var characterId = AnsiConsole.Ask<int>("Enter character [green]ID[/]:");
             var player = _context.Players
                 .Include(p => p.Abilities)
@@ -424,8 +421,8 @@ public class AdminService
                 _logger.LogInformation("Displayed {Count} abilities for {CharacterName} (ID: {Id}",
                     player.Abilities.Count, player.Name, player.Id);
             }
-            
-            PressAnyKey(); 
+
+            PressAnyKey();
         }
         catch (Exception ex)
         {
@@ -559,7 +556,8 @@ public class AdminService
 
         // TODO: Implement this method
         AnsiConsole.MarkupLine("[red]This feature is not yet implemented.[/]");
-        AnsiConsole.MarkupLine("[yellow]TODO: Find which character has specific equipment and where they are located.[/]");
+        AnsiConsole.MarkupLine(
+            "[yellow]TODO: Find which character has specific equipment and where they are located.[/]");
 
         PressAnyKey();
     }

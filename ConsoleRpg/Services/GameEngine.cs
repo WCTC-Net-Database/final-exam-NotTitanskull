@@ -66,6 +66,9 @@ public class GameEngine
         _currentPlayer = _context.Players
             .Include(p => p.Room)
             .Include(p => p.Equipment)
+                .ThenInclude(e => e.Weapon)
+            .Include(p => p.Equipment)
+                .ThenInclude(e => e.Armor)
             .Include(p => p.Abilities)
             .FirstOrDefault();
 
@@ -149,7 +152,7 @@ public class GameEngine
                 HandleActionResult(_playerService.ShowCharacterStats(_currentPlayer));
                 break;
             case "Attack Monster":
-                HandleActionResult(_playerService.AttackMonster());
+                HandleActionResult(_playerService.AttackMonster(_currentPlayer, _currentRoom));
                 break;
             case "Use Ability":
                 HandleActionResult(_playerService.UseAbilityOnMonster());

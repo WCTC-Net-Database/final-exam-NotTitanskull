@@ -4,6 +4,7 @@ using ConsoleRpgEntities.Models.Characters;
 using ConsoleRpgEntities.Models.Rooms;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Spectre.Console;
 
 namespace ConsoleRpg.Services;
 
@@ -83,8 +84,8 @@ public class PlayerService
         try
         {
             var output = $"[yellow]Character:[/] {player.Name}\n" +
-                        $"[green]Health:[/] {player.Health}\n" +
-                        $"[cyan]Experience:[/] {player.Experience}";
+                         $"[green]Health:[/] {player.Health}\n" +
+                         $"[cyan]Experience:[/] {player.Experience}";
 
             _logger.LogInformation("Displaying stats for player {PlayerName}", player.Name);
 
@@ -109,7 +110,7 @@ public class PlayerService
         try
         {
             var output = $"[magenta]Equipment:[/] {(player.Equipment != null ? "Equipped" : "None")}\n" +
-                        $"[blue]Abilities:[/] {player.Abilities?.Count ?? 0}";
+                         $"[blue]Abilities:[/] {player.Abilities?.Count ?? 0}";
 
             _logger.LogInformation("Displaying inventory for player {PlayerName}", player.Name);
 
@@ -127,15 +128,74 @@ public class PlayerService
     }
 
     /// <summary>
-    /// TODO: Implement monster attack logic
+    /// Monster attack logic
     /// </summary>
-    public ServiceResult AttackMonster()
+    public ServiceResult AttackMonster(Player player, Room currentRoom)
     {
-        _logger.LogInformation("Attack monster feature called (not yet implemented)");
-        return ServiceResult.Ok(
-            "[yellow]Attack (TODO)[/]",
-            "[yellow]TODO: Implement attack logic - students will complete this feature.[/]");
-        // Students will implement this
+        try
+        {
+            _logger.LogInformation("Player {PlayerName} is attempting to attack a monster", player.Name);
+            
+            if (!currentRoom.Monsters.Any())
+            {
+                return ServiceResult.Fail(
+                    "[red]No Targets[/]",
+                    "[red]There are no monsters to attack in this room.[/]");
+            }
+
+            Monster targetMonster;
+            if (currentRoom.Monsters.Count == 1)
+            {
+                targetMonster = currentRoom.Monsters.First();
+            }
+            else
+            {
+                var monsterChoices = currentRoom.Monsters
+                    .Select(m => $"{m.Name} (HP: {m.Health})")
+                    .ToList();
+                
+                var selection = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title("[yellow]Select a monster to attack:[/]")
+                        .AddChoices(monsterChoices));
+
+                var monsterName = selection.Split(" (HP:")[0];
+                targetMonster = currentRoom.Monsters.First(m => m.Name == monsterName);
+            }
+
+            int baseDamage = 5;
+            int weaponDamage = player.Equipment?.Weapon?.Attack ?? 0;
+            int totalDamage = baseDamage + weaponDamage;
+
+            targetMonster.Health -= totalDamage;
+
+            _logger.LogInformation("Player {PlayerName} dealt {Damage} damage to monster {MonsterName}",
+                player.Name, totalDamage, targetMonster.Name);
+
+            if (targetMonster.Health <= 0)
+            {
+                _context.Monsters.Remove(targetMonster);
+                player.Experience += 50;
+                _context.SaveChanges();
+
+                return ServiceResult.Ok(
+                    "[green]Monster Defeated![/]",
+                    $"[green]You defeated {targetMonster.Name}! (+50 XP)[/]");
+            }
+
+            _context.SaveChanges();
+
+            return ServiceResult.Ok(
+                "[yellow]Attack Successful[/]",
+                $"[yellow]You attacked {targetMonster.Name} for {totalDamage} damage.\nMonster HP: {targetMonster.Health}[/]");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during attack by player {PlayerName}", player.Name);
+            return ServiceResult.Fail(
+                "[red]Attack failed[/]",
+                $"[red]An error occurred during the attack: {ex.Message}[/]");
+        }
     }
 
     /// <summary>
