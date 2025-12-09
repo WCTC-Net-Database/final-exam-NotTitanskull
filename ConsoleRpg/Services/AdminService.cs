@@ -1,6 +1,6 @@
 using ConsoleRpgEntities.Data;
-using ConsoleRpgEntities.Models.Abilities;
 using ConsoleRpgEntities.Models.Characters;
+using ConsoleRpgEntities.Models.Rooms;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
@@ -11,17 +11,8 @@ namespace ConsoleRpg.Services;
 /// Handles all admin/developer CRUD operations and advanced queries
 /// Separated from GameEngine to follow Single Responsibility Principle
 /// </summary>
-public class AdminService
+public class AdminService(GameContext context, ILogger<AdminService> logger)
 {
-    private readonly GameContext _context;
-    private readonly ILogger<AdminService> _logger;
-
-    public AdminService(GameContext context, ILogger<AdminService> logger)
-    {
-        _context = context;
-        _logger = logger;
-    }
-
     #region Basic CRUD Operations
 
     /// <summary>
@@ -31,7 +22,7 @@ public class AdminService
     {
         try
         {
-            _logger.LogInformation("User selected Add Character");
+            logger.LogInformation("User selected Add Character");
             AnsiConsole.MarkupLine("[yellow]=== Add New Character ===[/]");
 
             var name = AnsiConsole.Ask<string>("Enter character [green]name[/]:");
@@ -45,16 +36,16 @@ public class AdminService
                 Experience = experience
             };
 
-            _context.Players.Add(player);
-            _context.SaveChanges();
+            context.Players.Add(player);
+            context.SaveChanges();
 
-            _logger.LogInformation("Character {Name} added to database with Id {Id}", name, player.Id);
+            logger.LogInformation("Character {Name} added to database with Id {Id}", name, player.Id);
             AnsiConsole.MarkupLine($"[green]Character '{name}' added successfully![/]");
             Thread.Sleep(1000);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error adding character");
+            logger.LogError(ex, "Error adding character");
             AnsiConsole.MarkupLine($"[red]Error adding character: {ex.Message}[/]");
             PressAnyKey();
         }
@@ -67,15 +58,15 @@ public class AdminService
     {
         try
         {
-            _logger.LogInformation("User selected Edit Character");
+            logger.LogInformation("User selected Edit Character");
             AnsiConsole.MarkupLine("[yellow]=== Edit Character ===[/]");
 
             var id = AnsiConsole.Ask<int>("Enter character [green]ID[/] to edit:");
 
-            var player = _context.Players.Find(id);
+            var player = context.Players.Find(id);
             if (player == null)
             {
-                _logger.LogWarning("Character with Id {Id} not found", id);
+                logger.LogWarning("Character with Id {Id} not found", id);
                 AnsiConsole.MarkupLine($"[red]Character with ID {id} not found.[/]");
                 return;
             }
@@ -97,15 +88,15 @@ public class AdminService
                 player.Experience = AnsiConsole.Ask<int>("Enter new [green]experience[/]:");
             }
 
-            _context.SaveChanges();
+            context.SaveChanges();
 
-            _logger.LogInformation("Character {Name} (Id: {Id}) updated", player.Name, player.Id);
+            logger.LogInformation("Character {Name} (Id: {Id}) updated", player.Name, player.Id);
             AnsiConsole.MarkupLine($"[green]Character '{player.Name}' updated successfully![/]");
             Thread.Sleep(1000);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error editing character");
+            logger.LogError(ex, "Error editing character");
             AnsiConsole.MarkupLine($"[red]Error editing character: {ex.Message}[/]");
             PressAnyKey();
         }
@@ -118,10 +109,10 @@ public class AdminService
     {
         try
         {
-            _logger.LogInformation("User selected Display All Characters");
+            logger.LogInformation("User selected Display All Characters");
             AnsiConsole.MarkupLine("[yellow]=== All Characters ===[/]");
 
-            var players = _context.Players.Include(p => p.Room).ToList();
+            var players = context.Players.Include(p => p.Room).ToList();
 
             if (!players.Any())
             {
@@ -143,7 +134,7 @@ public class AdminService
                         player.Name,
                         player.Health.ToString(),
                         player.Experience.ToString(),
-                        player.Room?.Name ?? "Unknown"
+                        player.Room.Name
                     );
                 }
 
@@ -152,7 +143,7 @@ public class AdminService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error displaying all characters");
+            logger.LogError(ex, "Error displaying all characters");
             AnsiConsole.MarkupLine($"[red]Error displaying characters: {ex.Message}[/]");
         }
     }
@@ -164,24 +155,24 @@ public class AdminService
     {
         try
         {
-            _logger.LogInformation("User selected Search Character");
+            logger.LogInformation("User selected Search Character");
             AnsiConsole.MarkupLine("[yellow]=== Search Character ===[/]");
 
             var searchName = AnsiConsole.Ask<string>("Enter character [green]name[/] to search:");
 
-            var players = _context.Players
+            var players = context.Players
                 .Include(p => p.Room)
                 .Where(p => p.Name.ToLower().Contains(searchName.ToLower()))
                 .ToList();
 
             if (!players.Any())
             {
-                _logger.LogInformation("No characters found matching '{SearchName}'", searchName);
+                logger.LogInformation("No characters found matching '{SearchName}'", searchName);
                 AnsiConsole.MarkupLine($"[red]No characters found matching '{searchName}'.[/]");
             }
             else
             {
-                _logger.LogInformation("Found {Count} character(s) matching '{SearchName}'", players.Count, searchName);
+                logger.LogInformation("Found {Count} character(s) matching '{SearchName}'", players.Count, searchName);
 
                 var table = new Table();
                 table.AddColumn("ID");
@@ -197,7 +188,7 @@ public class AdminService
                         player.Name,
                         player.Health.ToString(),
                         player.Experience.ToString(),
-                        player.Room?.Name ?? "Unknown"
+                        player.Room.Name
                     );
                 }
 
@@ -206,7 +197,7 @@ public class AdminService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error searching for characters");
+            logger.LogError(ex, "Error searching for characters");
             AnsiConsole.MarkupLine($"[red]Error searching characters: {ex.Message}[/]");
         }
     }
@@ -231,10 +222,10 @@ public class AdminService
     {
         try
         {
-            _logger.LogInformation("User selected Add Ability to Character");
+            logger.LogInformation("User selected Add Ability to Character");
             AnsiConsole.MarkupLine("[yellow]=== Add Ability to Character ===[/]");
 
-            var players = _context.Players.Include(p => p.Abilities).ToList();
+            var players = context.Players.Include(p => p.Abilities).ToList();
 
             if (!players.Any())
             {
@@ -255,26 +246,26 @@ public class AdminService
                     p.Id.ToString(),
                     p.Name,
                     p.Health.ToString(),
-                    p.Abilities?.Count.ToString() ?? "0"
+                    p.Abilities.Count.ToString()
                 );
             }
 
             AnsiConsole.Write(characterTable);
 
             var characterId = AnsiConsole.Ask<int>("Enter character [green]ID[/]:");
-            var player = _context.Players
+            var player = context.Players
                 .Include(p => p.Abilities)
                 .FirstOrDefault(p => p.Id == characterId);
 
             if (player == null)
             {
-                _logger.LogWarning("Character with ID {Id} not found", characterId);
+                logger.LogWarning("Character with ID {Id} not found", characterId);
                 AnsiConsole.MarkupLine($"[red]Character with ID {characterId} not found.[/]");
                 PressAnyKey();
                 return;
             }
 
-            var abilities = _context.Abilities.ToList();
+            var abilities = context.Abilities.ToList();
 
             if (!abilities.Any())
             {
@@ -293,18 +284,18 @@ public class AdminService
                 abilityTable.AddRow(
                     ability.Id.ToString(),
                     ability.Name,
-                    ability.Description ?? "N/A"
+                    ability.Description
                 );
             }
 
             AnsiConsole.Write(abilityTable);
 
             var abilityId = AnsiConsole.Ask<int>("Enter ability [green]ID[/] to add:");
-            var selectedAbility = _context.Abilities.Find(abilityId);
+            var selectedAbility = context.Abilities.Find(abilityId);
 
             if (selectedAbility == null)
             {
-                _logger.LogWarning("Ability with ID {Id} not found", abilityId);
+                logger.LogWarning("Ability with ID {Id} not found", abilityId);
                 AnsiConsole.MarkupLine($"[red]Ability with ID {abilityId} not found.[/]");
                 PressAnyKey();
                 return;
@@ -318,11 +309,10 @@ public class AdminService
                 return;
             }
 
-            player.Abilities ??= new List<Ability>();
             player.Abilities.Add(selectedAbility);
-            _context.SaveChanges();
+            context.SaveChanges();
 
-            _logger.LogInformation("Added ability {AbilityName} to character {CharacterName} (ID: {Id})",
+            logger.LogInformation("Added ability {AbilityName} to character {CharacterName} (ID: {Id})",
                 selectedAbility.Name, player.Name, player.Id);
             AnsiConsole.MarkupLine(
                 $"[green]Successfully added ability '{selectedAbility.Name}' to character '{player.Name}'.[/]");
@@ -330,7 +320,7 @@ public class AdminService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error adding ability to character");
+            logger.LogError(ex, "Error adding ability to character");
             AnsiConsole.MarkupLine($"[red]Error adding ability: {ex.Message}[/]");
             PressAnyKey();
         }
@@ -351,10 +341,10 @@ public class AdminService
     {
         try
         {
-            _logger.LogInformation("User selected Display Character Abilities");
+            logger.LogInformation("User selected Display Character Abilities");
             AnsiConsole.MarkupLine("[yellow]=== Display Character Abilities ===[/]");
 
-            var players = _context.Players.Include(p => p.Abilities).ToList();
+            var players = context.Players.Include(p => p.Abilities).ToList();
 
             if (!players.Any())
             {
@@ -382,13 +372,13 @@ public class AdminService
             AnsiConsole.Write(characterTable);
 
             var characterId = AnsiConsole.Ask<int>("Enter character [green]ID[/]:");
-            var player = _context.Players
+            var player = context.Players
                 .Include(p => p.Abilities)
                 .FirstOrDefault(p => p.Id == characterId);
 
             if (player == null)
             {
-                _logger.LogWarning("Character with ID {Id} not found", characterId);
+                logger.LogWarning("Character with ID {Id} not found", characterId);
                 AnsiConsole.MarkupLine($"[red]Character with ID {characterId} not found.[/]");
                 PressAnyKey();
                 return;
@@ -412,13 +402,13 @@ public class AdminService
                     var type = ability.GetType().Name;
                     abilityTable.AddRow(
                         ability.Name,
-                        ability.Description ?? "N/A",
+                        ability.Description,
                         type
                     );
                 }
 
                 AnsiConsole.Write(abilityTable);
-                _logger.LogInformation("Displayed {Count} abilities for {CharacterName} (ID: {Id}",
+                logger.LogInformation("Displayed {Count} abilities for {CharacterName} (ID: {Id}",
                     player.Abilities.Count, player.Name, player.Id);
             }
 
@@ -426,7 +416,7 @@ public class AdminService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error displaying character abilities");
+            logger.LogError(ex, "Error displaying character abilities");
             AnsiConsole.MarkupLine($"[red]Error displaying abilities: {ex.Message}[/]");
             PressAnyKey();
         }
@@ -437,7 +427,7 @@ public class AdminService
     #region B-Level Requirements
 
     /// <summary>
-    /// TODO: Implement this method
+    /// Implement this method
     /// Requirements:
     /// - Prompt user for room name
     /// - Prompt user for room description
@@ -449,18 +439,78 @@ public class AdminService
     /// </summary>
     public void AddRoom()
     {
-        _logger.LogInformation("User selected Add Room");
-        AnsiConsole.MarkupLine("[yellow]=== Add New Room ===[/]");
+        try
+        {
+            logger.LogInformation("User selected Add Room");
+            AnsiConsole.MarkupLine("[yellow]=== Add Room ===[/]");
 
-        // TODO: Implement this method
-        AnsiConsole.MarkupLine("[red]This feature is not yet implemented.[/]");
-        AnsiConsole.MarkupLine("[yellow]TODO: Allow users to create new rooms and connect them to the world.[/]");
+            var name = AnsiConsole.Ask<string>("Enter room [green]name[/]:");
+            var description = AnsiConsole.Ask<string>("Enter room [green]description[/]:");
 
-        PressAnyKey();
+            var room = new Room
+            {
+                Name = name,
+                Description = description
+            };
+
+            context.Rooms.Add(room);
+            context.SaveChanges();
+
+            logger.LogInformation("Room {Name} added to database with Id {Id}", name, room.Id);
+            AnsiConsole.MarkupLine($"[green]Room '{name}' added successfully![/]");
+
+            if (AnsiConsole.Confirm("Add a character to this room?"))
+            {
+                var players = context.Players.ToList();
+
+                if (!players.Any())
+                {
+                    AnsiConsole.MarkupLine("[yellow]No characters available to add.[/]");
+                }
+                else
+                {
+                    var playerTable = new Table();
+                    playerTable.AddColumn("ID");
+                    playerTable.AddColumn("Name");
+                    playerTable.AddColumn("Health");
+
+                    foreach (var p in players)
+                    {
+                        playerTable.AddRow(p.Id.ToString(), p.Name, p.Health.ToString());
+                    }
+
+                    AnsiConsole.Write(playerTable);
+
+                    var playerId = AnsiConsole.Ask<int>("Enter character [green]ID[/] to add:");
+                    var player = context.Players.Find(playerId);
+
+                    if (player != null)
+                    {
+                        player.RoomId = room.Id;
+                        context.SaveChanges();
+                        AnsiConsole.MarkupLine($"[green]Character '{player.Name}' added to room '{room.Name}'.[/]");
+                        logger.LogInformation("Character {PlayerName} added to room {RoomName}", player.Name,
+                            room.Name);
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine($"[red]Character with ID {playerId} not found.[/]");
+                    }
+                }
+            }
+
+            Thread.Sleep(1000);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error adding room");
+            AnsiConsole.MarkupLine($"[red]Error adding room: {ex.Message}[/]");
+            PressAnyKey();
+        }
     }
 
     /// <summary>
-    /// TODO: Implement this method
+    /// Implement this method
     /// Requirements:
     /// - Display a list of all rooms
     /// - Prompt user to select a room (by ID or name)
@@ -473,14 +523,110 @@ public class AdminService
     /// </summary>
     public void DisplayRoomDetails()
     {
-        _logger.LogInformation("User selected Display Room Details");
-        AnsiConsole.MarkupLine("[yellow]=== Display Room Details ===[/]");
+        try
+        {
+            logger.LogInformation("User selected Display Room Details");
+            AnsiConsole.MarkupLine("[yellow]=== Display Room Details ===[/]");
 
-        // TODO: Implement this method
-        AnsiConsole.MarkupLine("[red]This feature is not yet implemented.[/]");
-        AnsiConsole.MarkupLine("[yellow]TODO: Display detailed information about a room and its inhabitants.[/]");
+            var rooms = context.Rooms.ToList();
 
-        PressAnyKey();
+            if (!rooms.Any())
+            {
+                AnsiConsole.MarkupLine("[red]No rooms found in database.[/]");
+                PressAnyKey();
+                return;
+            }
+
+            var roomTable = new Table();
+            roomTable.AddColumn("ID");
+            roomTable.AddColumn("Name");
+            roomTable.AddColumn("Description");
+
+            foreach (var r in rooms)
+            {
+                roomTable.AddRow(
+                    r.Id.ToString(),
+                    r.Name,
+                    r.Description.Length > 50 ? r.Description.Substring(0, 47) + "..." : r.Description
+                );
+            }
+
+            AnsiConsole.Write(roomTable);
+
+            var roomId = AnsiConsole.Ask<int>("Enter room [green]ID[/]:");
+            var room = context.Rooms
+                .Include(r => r.Players)
+                .Include(r => r.Monsters)
+                .FirstOrDefault(r => r.Id == roomId);
+
+            if (room == null)
+            {
+                logger.LogWarning("Room with ID {Id} not found", roomId);
+                AnsiConsole.MarkupLine($"[red]Room with ID {roomId} not found.[/]");
+                PressAnyKey();
+                return;
+            }
+
+            var panel = new Panel(
+                new Markup($"[bold cyan]{room.Name}[/]\n\n{room.Description}")
+            );
+            panel.Header = new PanelHeader("[yellow]Room Details[/]");
+            panel.Border = BoxBorder.Rounded;
+            AnsiConsole.Write(panel);
+
+            AnsiConsole.WriteLine();
+
+            if (room.Players != null && room.Players.Any())
+            {
+                AnsiConsole.MarkupLine("[green]Characters in this room:[/]");
+                var playerTable = new Table();
+                playerTable.AddColumn("Name");
+                playerTable.AddColumn("Health");
+                playerTable.AddColumn("Experience");
+
+                foreach (var player in room.Players)
+                {
+                    playerTable.AddRow(player.Name, player.Health.ToString(), player.Experience.ToString());
+                }
+
+                AnsiConsole.Write(playerTable);
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[dim]No characters in this room.[/]");
+            }
+
+            AnsiConsole.WriteLine();
+
+            if (room.Monsters != null && room.Monsters.Any())
+            {
+                AnsiConsole.MarkupLine("[red]Monsters in this room:[/]");
+                var monsterTable = new Table();
+                monsterTable.AddColumn("Name");
+                monsterTable.AddColumn("Health");
+
+                foreach (var monster in room.Monsters)
+                {
+                    monsterTable.AddRow(monster.Name, monster.Health.ToString());
+                }
+
+                AnsiConsole.Write(monsterTable);
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[dim]No monsters in this room.[/]");
+            }
+
+            logger.LogInformation("Displayed details for room {RoomName} (ID: {Id})", room.Name, room.Id);
+
+            PressAnyKey();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error displaying room details");
+            AnsiConsole.MarkupLine($"[red]Error displaying room details: {ex.Message}[/]");
+            PressAnyKey();
+        }
     }
 
     #endregion
@@ -501,7 +647,7 @@ public class AdminService
     /// </summary>
     public void ListCharactersInRoomByAttribute()
     {
-        _logger.LogInformation("User selected List Characters in Room by Attribute");
+        logger.LogInformation("User selected List Characters in Room by Attribute");
         AnsiConsole.MarkupLine("[yellow]=== List Characters in Room by Attribute ===[/]");
 
         // TODO: Implement this method
@@ -525,7 +671,7 @@ public class AdminService
     /// </summary>
     public void ListAllRoomsWithCharacters()
     {
-        _logger.LogInformation("User selected List All Rooms with Characters");
+        logger.LogInformation("User selected List All Rooms with Characters");
         AnsiConsole.MarkupLine("[yellow]=== List All Rooms with Characters ===[/]");
 
         // TODO: Implement this method
@@ -551,7 +697,7 @@ public class AdminService
     /// </summary>
     public void FindEquipmentLocation()
     {
-        _logger.LogInformation("User selected Find Equipment Location");
+        logger.LogInformation("User selected Find Equipment Location");
         AnsiConsole.MarkupLine("[yellow]=== Find Equipment Location ===[/]");
 
         // TODO: Implement this method

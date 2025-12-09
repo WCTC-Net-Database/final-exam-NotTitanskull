@@ -1,9 +1,7 @@
-﻿using Castle.Core.Configuration;
-using ConsoleRpg.Helpers;
+﻿using ConsoleRpg.Helpers;
 using ConsoleRpg.Services;
 using ConsoleRpgEntities.Data;
 using ConsoleRpgEntities.Helpers;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -19,7 +17,7 @@ public static class Startup
         var configuration = ConfigurationHelper.GetConfiguration();
 
         // Create and bind FileLoggerOptions
-        var fileLoggerOptions = new NReco.Logging.File.FileLoggerOptions();
+        var fileLoggerOptions = new FileLoggerOptions();
         configuration.GetSection("Logging:File").Bind(fileLoggerOptions);
 
         // Configure logging
@@ -41,7 +39,7 @@ public static class Startup
         var connectionString = configuration.GetConnectionString("DefaultConnection");
         services.AddDbContext<GameContext>(options =>
         {
-            ConfigurationHelper.ConfigureDbContextOptions(options, connectionString);
+            ConfigurationHelper.ConfigureDbContextOptions(options, connectionString ?? throw new InvalidOperationException());
         });
 
 
