@@ -154,8 +154,8 @@ public class GameEngine
             case "Attack Monster":
                 HandleActionResult(_playerService.AttackMonster(_currentPlayer, _currentRoom));
                 break;
-            case "Use Ability":
-                HandleActionResult(_playerService.UseAbilityOnMonster());
+            case "Use Ability": 
+                HandleActionResult(_playerService.UseAbilityOnMonster(_currentPlayer, _currentRoom));
                 break;
             case "Return to Main Menu":
                 _currentMode = GameMode.Admin;
