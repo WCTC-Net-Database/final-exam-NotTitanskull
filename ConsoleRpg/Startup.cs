@@ -1,5 +1,6 @@
 ﻿using ConsoleRpg.Helpers;
 using ConsoleRpg.Services;
+using ConsoleRpg.Services.Interfaces;
 using ConsoleRpgEntities.Data;
 using ConsoleRpgEntities.Helpers;
 using Microsoft.Extensions.Configuration;
@@ -46,8 +47,14 @@ public static class Startup
         // Register your services
         services.AddTransient<GameEngine>();
         services.AddTransient<MenuManager>();
-        services.AddTransient<PlayerService>();
+        
+        // Register service interfaces with implementations
+        services.AddTransient<IPlayerService, PlayerService>();
+        
+        // AdminService - handles admin/developer operations
         services.AddTransient<AdminService>();
+        
+        // Singletons
         services.AddSingleton<OutputManager>();
         services.AddSingleton<MapManager>();
         services.AddSingleton<ExplorationUI>();

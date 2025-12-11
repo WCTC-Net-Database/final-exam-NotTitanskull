@@ -32,12 +32,13 @@ public class MenuManager
         _outputManager.WriteLine("'B' LEVEL FEATURES:", ConsoleColor.Green);
         _outputManager.WriteLine("8. Add New Room", ConsoleColor.Cyan);
         _outputManager.WriteLine("9. Display Room Details", ConsoleColor.Cyan);
-        _outputManager.WriteLine("10. Navigate Rooms (use Exploration Mode)", ConsoleColor.DarkGray);
+        _outputManager.WriteLine("10. Manage Room Connections", ConsoleColor.Cyan);
+        _outputManager.WriteLine("11. Navigate Rooms (use Exploration Mode)", ConsoleColor.DarkGray);
         _outputManager.WriteLine("");
         _outputManager.WriteLine("'A' LEVEL FEATURES:", ConsoleColor.Green);
-        _outputManager.WriteLine("11. List Characters in Room by Attribute", ConsoleColor.Cyan);
-        _outputManager.WriteLine("12. List All Rooms with Characters", ConsoleColor.Cyan);
-        _outputManager.WriteLine("13. Find Equipment Location", ConsoleColor.Cyan);
+        _outputManager.WriteLine("12. List Characters in Room by Attribute", ConsoleColor.Cyan);
+        _outputManager.WriteLine("13. List All Rooms with Characters", ConsoleColor.Cyan);
+        _outputManager.WriteLine("14. Find Equipment Location", ConsoleColor.Cyan);
         _outputManager.WriteLine("");
         _outputManager.WriteLine("Select an option:", ConsoleColor.White);
         _outputManager.Display();

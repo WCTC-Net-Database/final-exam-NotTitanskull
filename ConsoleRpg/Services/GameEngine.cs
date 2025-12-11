@@ -1,5 +1,6 @@
 using ConsoleRpg.Helpers;
 using ConsoleRpg.Models;
+using ConsoleRpg.Services.Interfaces;
 using ConsoleRpgEntities.Data;
 using ConsoleRpgEntities.Models.Characters;
 using ConsoleRpgEntities.Models.Rooms;
@@ -9,13 +10,17 @@ using Spectre.Console;
 
 namespace ConsoleRpg.Services;
 
+/// <summary>
+/// Main game engine - orchestrates game flow
+/// Uses interfaces for dependencies - follows Dependency Inversion Principle
+/// </summary>
 public class GameEngine
 {
     private readonly GameContext _context;
     private readonly MenuManager _menuManager;
     private readonly MapManager _mapManager;
     private readonly ExplorationUI _explorationUI;
-    private readonly PlayerService _playerService;
+    private readonly IPlayerService _playerService;  // Now uses interface!
     private readonly AdminService _adminService;
     private readonly ILogger<GameEngine> _logger;
 
@@ -24,7 +29,7 @@ public class GameEngine
     private GameMode _currentMode = GameMode.Exploration;
 
     public GameEngine(GameContext context, MenuManager menuManager, MapManager mapManager,
-                     ExplorationUI explorationUI, PlayerService playerService,
+                     ExplorationUI explorationUI, IPlayerService playerService,
                      AdminService adminService, ILogger<GameEngine> logger)
     {
         _context = context;
@@ -223,11 +228,9 @@ public class GameEngine
                 break;
             case "3":
                 _adminService.DisplayAllCharacters();
-                PressAnyKey();
                 break;
             case "4":
                 _adminService.SearchCharacterByName();
-                PressAnyKey();
                 break;
 
             // C-Level Features
@@ -251,19 +254,22 @@ public class GameEngine
                 _adminService.DisplayRoomDetails();
                 break;
             case "10":
+                _adminService.ManageRoomConnections();
+                break;
+            case "11":
                 // Navigate rooms - redirect to exploration mode
                 AnsiConsole.MarkupLine("[yellow]Please use this feature in Exploration Mode[/]");
                 PressAnyKey();
                 break;
 
             // A-Level Features
-            case "11":
+            case "12":
                 _adminService.ListCharactersInRoomByAttribute();
                 break;
-            case "12":
+            case "13":
                 _adminService.ListAllRoomsWithCharacters();
                 break;
-            case "13":
+            case "14":
                 _adminService.FindEquipmentLocation();
                 break;
 

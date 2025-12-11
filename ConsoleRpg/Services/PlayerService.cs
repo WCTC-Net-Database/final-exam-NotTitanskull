@@ -1,4 +1,5 @@
 using ConsoleRpg.Models;
+using ConsoleRpg.Services.Interfaces;
 using ConsoleRpgEntities.Data;
 using ConsoleRpgEntities.Models.Characters;
 using ConsoleRpgEntities.Models.Rooms;
@@ -10,10 +11,11 @@ namespace ConsoleRpg.Services;
 
 /// <summary>
 /// Handles all player-related actions and interactions
+/// Implements IPlayerService interface - follows Dependency Inversion Principle
 /// Separated from GameEngine to follow Single Responsibility Principle
 /// Returns ServiceResult objects to decouple from UI concerns
 /// </summary>
-public class PlayerService
+public class PlayerService : IPlayerService
 {
     private readonly GameContext _context;
     private readonly ILogger<PlayerService> _logger;

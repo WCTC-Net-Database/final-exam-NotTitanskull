@@ -1,5 +1,6 @@
 using ConsoleRpgEntities.Data;
 using ConsoleRpgEntities.Models.Characters;
+using ConsoleRpgEntities.Models.Characters.Monsters;
 using ConsoleRpgEntities.Models.Rooms;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -61,6 +62,37 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
             logger.LogInformation("User selected Edit Character");
             AnsiConsole.MarkupLine("[yellow]=== Edit Character ===[/]");
 
+            // Display all characters first
+            var allPlayers = context.Players.Include(p => p.Room).ToList();
+
+            if (!allPlayers.Any())
+            {
+                AnsiConsole.MarkupLine("[red]No characters found.[/]");
+                PressAnyKey();
+                return;
+            }
+
+            var table = new Table();
+            table.AddColumn("ID");
+            table.AddColumn("Name");
+            table.AddColumn("Health");
+            table.AddColumn("Experience");
+            table.AddColumn("Location");
+
+            foreach (var p in allPlayers)
+            {
+                table.AddRow(
+                    p.Id.ToString(),
+                    p.Name,
+                    p.Health.ToString(),
+                    p.Experience.ToString(),
+                    p.Room?.Name ?? "[dim]No Location[/]"
+                );
+            }
+
+            AnsiConsole.Write(table);
+            AnsiConsole.WriteLine();
+
             var id = AnsiConsole.Ask<int>("Enter character [green]ID[/] to edit:");
 
             var player = context.Players.Find(id);
@@ -68,6 +100,7 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
             {
                 logger.LogWarning("Character with Id {Id} not found", id);
                 AnsiConsole.MarkupLine($"[red]Character with ID {id} not found.[/]");
+                PressAnyKey();
                 return;
             }
 
@@ -92,7 +125,7 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
 
             logger.LogInformation("Character {Name} (Id: {Id}) updated", player.Name, player.Id);
             AnsiConsole.MarkupLine($"[green]Character '{player.Name}' updated successfully![/]");
-            Thread.Sleep(1000);
+            PressAnyKey();
         }
         catch (Exception ex)
         {
@@ -134,17 +167,20 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
                         player.Name,
                         player.Health.ToString(),
                         player.Experience.ToString(),
-                        player.Room.Name
+                        player.Room?.Name ?? "[dim]No Location[/]"
                     );
                 }
 
                 AnsiConsole.Write(table);
             }
+
+            PressAnyKey();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error displaying all characters");
             AnsiConsole.MarkupLine($"[red]Error displaying characters: {ex.Message}[/]");
+            PressAnyKey();
         }
     }
 
@@ -188,17 +224,20 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
                         player.Name,
                         player.Health.ToString(),
                         player.Experience.ToString(),
-                        player.Room.Name
+                        player.Room?.Name ?? "[dim]No Location[/]"
                     );
                 }
 
                 AnsiConsole.Write(table);
             }
+
+            PressAnyKey();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error searching for characters");
             AnsiConsole.MarkupLine($"[red]Error searching characters: {ex.Message}[/]");
+            PressAnyKey();
         }
     }
 
@@ -447,56 +486,36 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
             var name = AnsiConsole.Ask<string>("Enter room [green]name[/]:");
             var description = AnsiConsole.Ask<string>("Enter room [green]description[/]:");
 
+            var (x, y) = GetRoomCoordinates();
+
             var room = new Room
             {
                 Name = name,
-                Description = description
+                Description = description,
+                X = x,
+                Y = y
             };
 
             context.Rooms.Add(room);
             context.SaveChanges();
 
-            logger.LogInformation("Room {Name} added to database with Id {Id}", name, room.Id);
-            AnsiConsole.MarkupLine($"[green]Room '{name}' added successfully![/]");
+            logger.LogInformation("Room {Name} added to database with Id {Id} at ({X},{Y})",
+                name, room.Id, x, y);
+            AnsiConsole.MarkupLine($"[green]Room '{name}' added successfully at coordinates ({x}, {y})![/]");
 
             if (AnsiConsole.Confirm("Add a character to this room?"))
             {
-                var players = context.Players.ToList();
+                AddCharacterToRoom(room);
+            }
 
-                if (!players.Any())
-                {
-                    AnsiConsole.MarkupLine("[yellow]No characters available to add.[/]");
-                }
-                else
-                {
-                    var playerTable = new Table();
-                    playerTable.AddColumn("ID");
-                    playerTable.AddColumn("Name");
-                    playerTable.AddColumn("Health");
+            if (AnsiConsole.Confirm("Add monsters to this room?"))
+            {
+                AddMonstersToRoom(room);
+            }
 
-                    foreach (var p in players)
-                    {
-                        playerTable.AddRow(p.Id.ToString(), p.Name, p.Health.ToString());
-                    }
-
-                    AnsiConsole.Write(playerTable);
-
-                    var playerId = AnsiConsole.Ask<int>("Enter character [green]ID[/] to add:");
-                    var player = context.Players.Find(playerId);
-
-                    if (player != null)
-                    {
-                        player.RoomId = room.Id;
-                        context.SaveChanges();
-                        AnsiConsole.MarkupLine($"[green]Character '{player.Name}' added to room '{room.Name}'.[/]");
-                        logger.LogInformation("Character {PlayerName} added to room {RoomName}", player.Name,
-                            room.Name);
-                    }
-                    else
-                    {
-                        AnsiConsole.MarkupLine($"[red]Character with ID {playerId} not found.[/]");
-                    }
-                }
+            if (AnsiConsole.Confirm("Configure room connections (North/South/East/West)?"))
+            {
+                ConfigureRoomConnections(room);
             }
 
             Thread.Sleep(1000);
@@ -506,6 +525,1069 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
             logger.LogError(ex, "Error adding room");
             AnsiConsole.MarkupLine($"[red]Error adding room: {ex.Message}[/]");
             PressAnyKey();
+        }
+    }
+
+    private (int x, int y) GetRoomCoordinates()
+    {
+        var existingRooms = context.Rooms.ToList();
+
+        if (!existingRooms.Any())
+        {
+            AnsiConsole.MarkupLine("[yellow]No existing rooms. Creating first room at (0, 0).[/]");
+            return (0, 0);
+        }
+
+        // Get available coordinates
+        var occupiedCoordinates = existingRooms.Select(r => (r.X, r.Y)).ToHashSet();
+
+        // Interactive tile selector is now the DEFAULT
+        // Only ask if they want manual entry instead
+        if (AnsiConsole.Confirm("Use [green]manual coordinate entry[/] instead of interactive selector?"))
+        {
+            return GetManualCoordinates(existingRooms, occupiedCoordinates);
+        }
+
+        // Default to interactive tile selector
+        return InteractiveTileSelector(existingRooms, occupiedCoordinates);
+    }
+
+    private (int x, int y) InteractiveTileSelector(List<Room> existingRooms, HashSet<(int, int)> occupied)
+    {
+        // Calculate boundaries with padding for new rooms
+        int minX = existingRooms.Min(r => r.X) - 2;
+        int maxX = existingRooms.Max(r => r.X) + 2;
+        int minY = existingRooms.Min(r => r.Y) - 2;
+        int maxY = existingRooms.Max(r => r.Y) + 2;
+
+        int currentX = 0;
+        int currentY = 0;
+
+        // Start at first empty adjacent space
+        foreach (var room in existingRooms)
+        {
+            var adjacentSpaces = new[]
+            {
+                (room.X, room.Y + 1), // North
+                (room.X, room.Y - 1), // South
+                (room.X + 1, room.Y), // East
+                (room.X - 1, room.Y) // West
+            };
+
+            var firstEmpty = adjacentSpaces.FirstOrDefault(pos => !occupied.Contains(pos));
+            if (firstEmpty != default)
+            {
+                currentX = firstEmpty.Item1;
+                currentY = firstEmpty.Item2;
+                break;
+            }
+        }
+
+        while (true)
+        {
+            Console.Clear();
+            AnsiConsole.MarkupLine("[cyan]═══ Interactive Room Placement ═══[/]");
+            AnsiConsole.MarkupLine(
+                "[yellow]Arrow Keys/WASD[/] = Move [green]@[/] cursor | [green]Enter[/] = Select [dim][[ ]][/] slot | [red]ESC[/] = Manual entry\n");
+
+            RenderTileGrid(existingRooms, occupied, currentX, currentY, minX, maxX, minY, maxY);
+
+            var key = Console.ReadKey(true);
+
+            switch (key.Key)
+            {
+                case ConsoleKey.UpArrow:
+                case ConsoleKey.W:
+                    if (currentY < maxY) currentY++;
+                    break;
+                case ConsoleKey.DownArrow:
+                case ConsoleKey.S:
+                    if (currentY > minY) currentY--;
+                    break;
+                case ConsoleKey.RightArrow:
+                case ConsoleKey.D:
+                    if (currentX < maxX) currentX++;
+                    break;
+                case ConsoleKey.LeftArrow:
+                case ConsoleKey.A:
+                    if (currentX > minX) currentX--;
+                    break;
+                case ConsoleKey.Enter:
+                    if (!occupied.Contains((currentX, currentY)))
+                    {
+                        AnsiConsole.MarkupLine($"\n[green]✓ Selected coordinates: ({currentX}, {currentY})[/]");
+                        Thread.Sleep(800);
+                        return (currentX, currentY);
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine("\n[red]✗ This space is occupied! Choose an empty space.[/]");
+                        Thread.Sleep(1200);
+                    }
+
+                    break;
+                case ConsoleKey.Escape:
+                    AnsiConsole.MarkupLine("\n[yellow]Switching to manual coordinate entry...[/]");
+                    Thread.Sleep(500);
+                    return GetManualCoordinates(existingRooms, occupied);
+            }
+        }
+    }
+
+    private void RenderTileGrid(List<Room> rooms, HashSet<(int, int)> occupied,
+        int cursorX, int cursorY, int minX, int maxX, int minY, int maxY)
+    {
+        var table = new Table();
+        table.Border = TableBorder.Square;
+        table.ShowHeaders = false;
+        table.Expand = false;
+
+        // Add column for Y-axis labels
+        table.AddColumn(new TableColumn("[dim]Y\\X[/]").Width(4).RightAligned());
+
+        // Add columns for each X coordinate
+        for (int x = minX; x <= maxX; x++)
+        {
+            table.AddColumn(new TableColumn($"[dim]{x}[/]").Width(5).Centered());
+        }
+
+        // Add rows from top to bottom (high Y to low Y)
+        for (int y = maxY; y >= minY; y--)
+        {
+            var row = new List<string> { $"[dim]{y}[/]" };
+
+            for (int x = minX; x <= maxX; x++)
+            {
+                var isOccupied = occupied.Contains((x, y));
+                var isCursor = (x == cursorX && y == cursorY);
+                var room = rooms.FirstOrDefault(r => r.X == x && r.Y == y);
+
+                string cell;
+
+                if (isCursor && isOccupied)
+                {
+                    // Cursor on occupied space (invalid selection) - red @ on occupied room
+                    cell = "[bold red on white][[@]][/]";
+                }
+                else if (isCursor)
+                {
+                    // Valid cursor position (empty space) - green @ 
+                    cell = "[bold green][[@]][/]";
+                }
+                else if (isOccupied)
+                {
+                    // Existing room - blue cube ■
+                    cell = "[blue][[■]][/]";
+                }
+                else
+                {
+                    // Empty selectable space - [  ]
+                    cell = "[dim][[ ]][/]";
+                }
+
+                row.Add(cell);
+            }
+
+            table.AddRow(row.ToArray());
+        }
+
+        AnsiConsole.Write(table);
+
+        // Show legend
+        AnsiConsole.WriteLine();
+        var legendGrid = new Grid();
+        legendGrid.AddColumn();
+        legendGrid.AddColumn();
+        legendGrid.AddColumn();
+        legendGrid.AddColumn();
+
+        legendGrid.AddRow(
+            "[green][[@]][/] Your cursor",
+            "[red on white][[@]][/] Invalid position",
+            "[blue][[■]][/] Existing room",
+            "[dim][[ ]][/] Empty slot"
+        );
+
+        var legendPanel = new Panel(legendGrid)
+        {
+            Header = new PanelHeader("[yellow]Legend[/]"),
+            Border = BoxBorder.Rounded,
+            Padding = new Padding(1, 0)
+        };
+        AnsiConsole.Write(legendPanel);
+
+        // Show current position info
+        AnsiConsole.WriteLine();
+        var roomAtCursor = rooms.FirstOrDefault(r => r.X == cursorX && r.Y == cursorY);
+        if (roomAtCursor != null)
+        {
+            AnsiConsole.MarkupLine(
+                $"[yellow]Position: ({cursorX}, {cursorY})[/] - [red]Occupied by: {roomAtCursor.Name}[/]");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[cyan]Position: ({cursorX}, {cursorY})[/] - [green]Empty (Ready to place)[/]");
+
+            // Show adjacent rooms
+            var adjacentRooms = rooms.Where(r =>
+                (r.X == cursorX && Math.Abs(r.Y - cursorY) == 1) ||
+                (r.Y == cursorY && Math.Abs(r.X - cursorX) == 1)
+            ).ToList();
+
+            if (adjacentRooms.Any())
+            {
+                var directions = new List<string>();
+                foreach (var adj in adjacentRooms)
+                {
+                    if (adj.X == cursorX && adj.Y == cursorY + 1) directions.Add($"North: {adj.Name}");
+                    if (adj.X == cursorX && adj.Y == cursorY - 1) directions.Add($"South: {adj.Name}");
+                    if (adj.X == cursorX + 1 && adj.Y == cursorY) directions.Add($"East: {adj.Name}");
+                    if (adj.X == cursorX - 1 && adj.Y == cursorY) directions.Add($"West: {adj.Name}");
+                }
+
+                AnsiConsole.MarkupLine($"[dim]Adjacent: {string.Join(", ", directions)}[/]");
+            }
+        }
+    }
+
+    private (int x, int y) GetManualCoordinates(List<Room> existingRooms, HashSet<(int, int)> occupied)
+    {
+        Console.Clear();
+        AnsiConsole.MarkupLine("[yellow]=== Manual Coordinate Entry ===[/]\n");
+
+        // Show suggested coordinates
+        if (AnsiConsole.Confirm("View suggested adjacent coordinates?"))
+        {
+            DisplaySuggestedCoordinates(existingRooms, occupied);
+            AnsiConsole.WriteLine();
+        }
+
+        int x, y;
+        bool isValid;
+
+        do
+        {
+            x = AnsiConsole.Ask<int>("Enter [green]X coordinate[/]:");
+            y = AnsiConsole.Ask<int>("Enter [green]Y coordinate[/]:");
+
+            isValid = !occupied.Contains((x, y));
+
+            if (!isValid)
+            {
+                AnsiConsole.MarkupLine(
+                    $"[red]Coordinates ({x}, {y}) are already occupied. Please choose different coordinates.[/]");
+            }
+        } while (!isValid);
+
+        return (x, y);
+    }
+
+    private void DisplayCoordinateMap(List<Room> rooms)
+    {
+        if (!rooms.Any()) return;
+
+        int minX = rooms.Min(r => r.X);
+        int maxX = rooms.Max(r => r.X);
+        int minY = rooms.Min(r => r.Y);
+        int maxY = rooms.Max(r => r.Y);
+
+        var table = new Table();
+        table.Border = TableBorder.Square;
+
+        // Add columns for coordinates
+        table.AddColumn("");
+        for (int x = minX; x <= maxX; x++)
+        {
+            table.AddColumn($"[cyan]{x}[/]");
+        }
+
+        // Add rows
+        for (int y = maxY; y >= minY; y--)
+        {
+            var row = new List<string> { $"[cyan]{y}[/]" };
+
+            for (int x = minX; x <= maxX; x++)
+            {
+                var room = rooms.FirstOrDefault(r => r.X == x && r.Y == y);
+                row.Add(room != null ? "[green]■[/]" : "[dim]·[/]");
+            }
+
+            table.AddRow(row.ToArray());
+        }
+
+        AnsiConsole.Write(table);
+    }
+
+    private void DisplaySuggestedCoordinates(List<Room> rooms, HashSet<(int, int)> occupied)
+    {
+        var suggestions = new List<(int x, int y, string adjacent)>();
+
+        foreach (var room in rooms)
+        {
+            // Check all four directions
+            if (!occupied.Contains((room.X, room.Y + 1)))
+                suggestions.Add((room.X, room.Y + 1, $"North of {room.Name}"));
+            if (!occupied.Contains((room.X, room.Y - 1)))
+                suggestions.Add((room.X, room.Y - 1, $"South of {room.Name}"));
+            if (!occupied.Contains((room.X + 1, room.Y)))
+                suggestions.Add((room.X + 1, room.Y, $"East of {room.Name}"));
+            if (!occupied.Contains((room.X - 1, room.Y)))
+                suggestions.Add((room.X - 1, room.Y, $"West of {room.Name}"));
+        }
+
+        if (suggestions.Any())
+        {
+            var table = new Table();
+            table.AddColumn("[yellow]X[/]");
+            table.AddColumn("[yellow]Y[/]");
+            table.AddColumn("[yellow]Location[/]");
+
+            foreach (var (x, y, adjacent) in suggestions.Distinct())
+            {
+                table.AddRow(x.ToString(), y.ToString(), adjacent);
+            }
+
+            AnsiConsole.Write(table);
+        }
+    }
+
+    private void AddCharacterToRoom(Room room)
+    {
+        var players = context.Players.ToList();
+
+        if (!players.Any())
+        {
+            AnsiConsole.MarkupLine("[yellow]No characters available to add.[/]");
+            return;
+        }
+
+        var playerTable = new Table();
+        playerTable.AddColumn("ID");
+        playerTable.AddColumn("Name");
+        playerTable.AddColumn("Health");
+
+        foreach (var p in players)
+        {
+            playerTable.AddRow(p.Id.ToString(), p.Name, p.Health.ToString());
+        }
+
+        AnsiConsole.Write(playerTable);
+
+        var playerId = AnsiConsole.Ask<int>("Enter character [green]ID[/] to add:");
+        var player = context.Players.Find(playerId);
+
+        if (player != null)
+        {
+            player.RoomId = room.Id;
+            context.SaveChanges();
+            AnsiConsole.MarkupLine($"[green]Character '{player.Name}' added to room '{room.Name}'.[/]");
+            logger.LogInformation("Character {PlayerName} added to room {RoomName}", player.Name, room.Name);
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[red]Character with ID {playerId} not found.[/]");
+        }
+    }
+
+    private void AddMonstersToRoom(Room room)
+    {
+        var unassignedMonsters = context.Monsters.Where(m => m.RoomId == null).ToList();
+        var allMonsters = context.Monsters.ToList();
+
+        if (!allMonsters.Any())
+        {
+            AnsiConsole.MarkupLine("[yellow]No monsters exist in the database.[/]");
+
+            if (AnsiConsole.Confirm("Create a new monster?"))
+            {
+                CreateAndAddMonster(room);
+            }
+
+            return;
+        }
+
+        bool addingMonsters = true;
+
+        while (addingMonsters)
+        {
+            AnsiConsole.MarkupLine("\n[cyan]Choose how to add a monster:[/]");
+            var choice = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .AddChoices(new[]
+                    {
+                        "Assign an unassigned monster",
+                        "Copy/Clone an existing monster",
+                        "Create a brand new monster",
+                        "Done adding monsters"
+                    }));
+
+            switch (choice)
+            {
+                case "Assign an unassigned monster":
+                    AssignUnassignedMonster(room, unassignedMonsters);
+                    // Refresh the list
+                    unassignedMonsters = context.Monsters.Where(m => m.RoomId == null).ToList();
+                    break;
+
+                case "Copy/Clone an existing monster":
+                    CloneMonsterToRoom(room, allMonsters);
+                    // Refresh both lists
+                    unassignedMonsters = context.Monsters.Where(m => m.RoomId == null).ToList();
+                    allMonsters = context.Monsters.ToList();
+                    break;
+
+                case "Create a brand new monster":
+                    CreateAndAddMonster(room);
+                    // Refresh both lists
+                    unassignedMonsters = context.Monsters.Where(m => m.RoomId == null).ToList();
+                    allMonsters = context.Monsters.ToList();
+                    break;
+
+                case "Done adding monsters":
+                    addingMonsters = false;
+                    break;
+            }
+        }
+    }
+
+    private void AssignUnassignedMonster(Room room, List<Monster> unassignedMonsters)
+    {
+        if (!unassignedMonsters.Any())
+        {
+            AnsiConsole.MarkupLine("[yellow]No unassigned monsters available. Try copying or creating one instead.[/]");
+            Thread.Sleep(1500);
+            return;
+        }
+
+        var monsterTable = new Table();
+        monsterTable.Title = new TableTitle("[yellow]Unassigned Monsters[/]");
+        monsterTable.AddColumn("ID");
+        monsterTable.AddColumn("Name");
+        monsterTable.AddColumn("Type");
+        monsterTable.AddColumn("Health");
+
+        foreach (var m in unassignedMonsters)
+        {
+            monsterTable.AddRow(m.Id.ToString(), m.Name, m.MonsterType, m.Health.ToString());
+        }
+
+        AnsiConsole.Write(monsterTable);
+
+        var monsterId = AnsiConsole.Ask<int>("Enter monster [green]ID[/] to assign (0 to cancel):");
+
+        if (monsterId == 0) return;
+
+        var monster = context.Monsters.Find(monsterId);
+
+        if (monster != null && monster.RoomId == null)
+        {
+            monster.RoomId = room.Id;
+            context.SaveChanges();
+            AnsiConsole.MarkupLine($"[green]✓ Monster '{monster.Name}' assigned to room '{room.Name}'.[/]");
+            logger.LogInformation("Monster {MonsterName} assigned to room {RoomName}", monster.Name, room.Name);
+            Thread.Sleep(1000);
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[red]Monster with ID {monsterId} not found or already assigned.[/]");
+            Thread.Sleep(1500);
+        }
+    }
+
+    private void CloneMonsterToRoom(Room room, List<Monster> allMonsters)
+    {
+        var monsterTable = new Table();
+        monsterTable.Title = new TableTitle("[cyan]All Monsters (Select one to copy)[/]");
+        monsterTable.AddColumn("ID");
+        monsterTable.AddColumn("Name");
+        monsterTable.AddColumn("Type");
+        monsterTable.AddColumn("Health");
+        monsterTable.AddColumn("Current Location");
+
+        foreach (var m in allMonsters)
+        {
+            var location = m.RoomId.HasValue
+                ? context.Rooms.Find(m.RoomId.Value)?.Name ?? "Unknown Room"
+                : "[dim]Unassigned[/]";
+
+            monsterTable.AddRow(
+                m.Id.ToString(),
+                m.Name,
+                m.MonsterType,
+                m.Health.ToString(),
+                location
+            );
+        }
+
+        AnsiConsole.Write(monsterTable);
+
+        var monsterId = AnsiConsole.Ask<int>("Enter monster [green]ID[/] to copy (0 to cancel):");
+
+        if (monsterId == 0) return;
+
+        var sourceMonster = context.Monsters.Find(monsterId);
+
+        if (sourceMonster == null)
+        {
+            AnsiConsole.MarkupLine($"[red]Monster with ID {monsterId} not found.[/]");
+            Thread.Sleep(1500);
+            return;
+        }
+
+        // Ask if they want to customize the copy
+        var customizeName =
+            AnsiConsole.Confirm($"Customize the copy? (Default: copy '{sourceMonster.Name}' exactly)", false);
+
+        string newName = sourceMonster.Name;
+        int newHealth = sourceMonster.Health;
+        int newAggression = sourceMonster.AggressionLevel;
+
+        if (customizeName)
+        {
+            newName = AnsiConsole.Ask($"Enter name for copy (or press Enter for '{sourceMonster.Name}'):",
+                sourceMonster.Name);
+            newHealth = AnsiConsole.Ask($"Enter health (or press Enter for {sourceMonster.Health}):",
+                sourceMonster.Health);
+            newAggression = AnsiConsole.Ask($"Enter aggression (or press Enter for {sourceMonster.AggressionLevel}):",
+                sourceMonster.AggressionLevel);
+        }
+
+        // Create a copy based on the monster type
+        Monster newMonster;
+
+        if (sourceMonster is Goblin goblin)
+        {
+            newMonster = new Goblin
+            {
+                Name = newName,
+                MonsterType = sourceMonster.MonsterType,
+                Health = newHealth,
+                AggressionLevel = newAggression,
+                RoomId = room.Id,
+                Sneakiness = goblin.Sneakiness
+            };
+        }
+        else
+        {
+            // Generic fallback - create a Goblin with default sneakiness
+            newMonster = new Goblin
+            {
+                Name = newName,
+                MonsterType = sourceMonster.MonsterType,
+                Health = newHealth,
+                AggressionLevel = newAggression,
+                RoomId = room.Id,
+                Sneakiness = 0
+            };
+        }
+
+        context.Monsters.Add(newMonster);
+        context.SaveChanges();
+
+        AnsiConsole.MarkupLine(
+            $"[green]✓ Created a copy of '{sourceMonster.Name}' → '{newMonster.Name}' in room '{room.Name}'![/]");
+        logger.LogInformation("Cloned monster {SourceName} to {NewName} in room {RoomName}",
+            sourceMonster.Name, newMonster.Name, room.Name);
+        Thread.Sleep(1000);
+    }
+
+
+    private void CreateAndAddMonster(Room room)
+    {
+        var name = AnsiConsole.Ask<string>("Enter monster [green]name[/]:");
+
+        var monsterType = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("Select monster [green]type[/]:")
+                .AddChoices(new[] { "Goblin", "Other" }));
+
+        var health = AnsiConsole.Ask<int>("Enter monster [green]health[/]:");
+        var aggression = AnsiConsole.Ask<int>("Enter [green]aggression level[/] (0-10):");
+
+        Monster monster;
+
+        switch (monsterType)
+        {
+            case "Goblin":
+                var sneakiness = AnsiConsole.Ask<int>("Enter [green]sneakiness level[/] (0-10):");
+                monster = new Goblin
+                {
+                    Name = name,
+                    MonsterType = monsterType,
+                    Health = health,
+                    AggressionLevel = aggression,
+                    RoomId = room.Id,
+                    Sneakiness = sneakiness
+                };
+                break;
+            default:
+                // For "Other" or future monster types, we need a concrete implementation
+                // Using Goblin as default with sneakiness = 0
+                monster = new Goblin
+                {
+                    Name = name,
+                    MonsterType = monsterType,
+                    Health = health,
+                    AggressionLevel = aggression,
+                    RoomId = room.Id,
+                    Sneakiness = 0
+                };
+                break;
+        }
+
+        context.Monsters.Add(monster);
+        context.SaveChanges();
+
+        AnsiConsole.MarkupLine($"[green]Monster '{name}' created and added to room '{room.Name}'![/]");
+        logger.LogInformation("Monster {MonsterName} created and added to room {RoomName}", name, room.Name);
+    }
+
+    private void ConfigureRoomConnections(Room room)
+    {
+        var existingRooms = context.Rooms.Where(r => r.Id != room.Id).ToList();
+
+        if (!existingRooms.Any())
+        {
+            AnsiConsole.MarkupLine("[yellow]No other rooms available to connect.[/]");
+            return;
+        }
+
+        // Auto-detect adjacent rooms based on coordinates
+        var northRoom = existingRooms.FirstOrDefault(r => r.X == room.X && r.Y == room.Y + 1);
+        var southRoom = existingRooms.FirstOrDefault(r => r.X == room.X && r.Y == room.Y - 1);
+        var eastRoom = existingRooms.FirstOrDefault(r => r.X == room.X + 1 && r.Y == room.Y);
+        var westRoom = existingRooms.FirstOrDefault(r => r.X == room.X - 1 && r.Y == room.Y);
+
+        var connectionsMade = 0;
+
+        // North connection
+        if (northRoom != null)
+        {
+            if (AnsiConsole.Confirm(
+                    $"Connect to [cyan]{northRoom.Name}[/] (ID: {northRoom.Id}) in the [bold]North[/]?"))
+            {
+                room.NorthRoomId = northRoom.Id;
+                northRoom.SouthRoomId = room.Id;
+                AnsiConsole.MarkupLine(
+                    $"[green]✓[/] Connected: [cyan]{room.Name}[/] ↔ North ↔ [cyan]{northRoom.Name}[/]");
+                connectionsMade++;
+            }
+        }
+
+        // South connection
+        if (southRoom != null)
+        {
+            if (AnsiConsole.Confirm(
+                    $"Connect to [cyan]{southRoom.Name}[/] (ID: {southRoom.Id}) in the [bold]South[/]?"))
+            {
+                room.SouthRoomId = southRoom.Id;
+                southRoom.NorthRoomId = room.Id;
+                AnsiConsole.MarkupLine(
+                    $"[green]✓[/] Connected: [cyan]{room.Name}[/] ↔ South ↔ [cyan]{southRoom.Name}[/]");
+                connectionsMade++;
+            }
+        }
+
+        // East connection
+        if (eastRoom != null)
+        {
+            if (AnsiConsole.Confirm($"Connect to [cyan]{eastRoom.Name}[/] (ID: {eastRoom.Id}) in the [bold]East[/]?"))
+            {
+                room.EastRoomId = eastRoom.Id;
+                eastRoom.WestRoomId = room.Id;
+                AnsiConsole.MarkupLine(
+                    $"[green]✓[/] Connected: [cyan]{room.Name}[/] ↔ East ↔ [cyan]{eastRoom.Name}[/]");
+                connectionsMade++;
+            }
+        }
+
+        // West connection
+        if (westRoom != null)
+        {
+            if (AnsiConsole.Confirm($"Connect to [cyan]{westRoom.Name}[/] (ID: {westRoom.Id}) in the [bold]West[/]?"))
+            {
+                room.WestRoomId = westRoom.Id;
+                westRoom.EastRoomId = room.Id;
+                AnsiConsole.MarkupLine(
+                    $"[green]✓[/] Connected: [cyan]{room.Name}[/] ↔ West ↔ [cyan]{westRoom.Name}[/]");
+                connectionsMade++;
+            }
+        }
+
+        // Offer manual connections if no adjacent rooms or user wants more
+        if (connectionsMade == 0 ||
+            AnsiConsole.Confirm("Configure additional manual connections (non-adjacent rooms)?"))
+        {
+            ConfigureManualConnections(room, existingRooms);
+        }
+
+        context.SaveChanges();
+        AnsiConsole.MarkupLine(
+            $"[green]Room connections configured successfully! ({connectionsMade} automatic connections made)[/]");
+    }
+
+    private void ConfigureManualConnections(Room room, List<Room> existingRooms)
+    {
+        var directions = new[] { "North", "South", "East", "West", "Done" };
+
+        while (true)
+        {
+            var direction = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title($"Select direction to connect from [cyan]{room.Name}[/] (or Done to finish):")
+                    .AddChoices(directions));
+
+            if (direction == "Done") break;
+
+            // Check if already connected
+            bool alreadyConnected = direction switch
+            {
+                "North" => room.NorthRoomId.HasValue,
+                "South" => room.SouthRoomId.HasValue,
+                "East" => room.EastRoomId.HasValue,
+                "West" => room.WestRoomId.HasValue,
+                _ => false
+            };
+
+            if (alreadyConnected)
+            {
+                if (!AnsiConsole.Confirm($"[yellow]{direction} is already connected. Override?[/]"))
+                    continue;
+            }
+
+            // Show available rooms
+            var roomTable = new Table();
+            roomTable.AddColumn("ID");
+            roomTable.AddColumn("Name");
+            roomTable.AddColumn("Coordinates");
+            roomTable.AddColumn("Current Exits");
+
+            foreach (var r in existingRooms)
+            {
+                var exits = new List<string>();
+                if (r.NorthRoomId.HasValue) exits.Add("N");
+                if (r.SouthRoomId.HasValue) exits.Add("S");
+                if (r.EastRoomId.HasValue) exits.Add("E");
+                if (r.WestRoomId.HasValue) exits.Add("W");
+
+                roomTable.AddRow(
+                    r.Id.ToString(),
+                    r.Name,
+                    $"({r.X}, {r.Y})",
+                    exits.Any() ? string.Join(",", exits) : "-"
+                );
+            }
+
+            AnsiConsole.Write(roomTable);
+
+            var targetRoomId = AnsiConsole.Ask<int>($"Enter room ID to connect [bold]{direction}[/] (0 to cancel):");
+
+            if (targetRoomId == 0) continue;
+
+            var targetRoom = existingRooms.FirstOrDefault(r => r.Id == targetRoomId);
+
+            if (targetRoom == null)
+            {
+                AnsiConsole.MarkupLine("[red]Invalid room ID![/]");
+                continue;
+            }
+
+            // Make bidirectional connection
+            switch (direction)
+            {
+                case "North":
+                    room.NorthRoomId = targetRoom.Id;
+                    targetRoom.SouthRoomId = room.Id;
+                    break;
+                case "South":
+                    room.SouthRoomId = targetRoom.Id;
+                    targetRoom.NorthRoomId = room.Id;
+                    break;
+                case "East":
+                    room.EastRoomId = targetRoom.Id;
+                    targetRoom.WestRoomId = room.Id;
+                    break;
+                case "West":
+                    room.WestRoomId = targetRoom.Id;
+                    targetRoom.EastRoomId = room.Id;
+                    break;
+            }
+
+            AnsiConsole.MarkupLine($"[green]✓ Connected: {room.Name} --{direction}--> {targetRoom.Name}[/]");
+            AnsiConsole.MarkupLine(
+                $"[green]✓ Reverse: {targetRoom.Name} --{GetOppositeDirection(direction)}--> {room.Name}[/]");
+        }
+    }
+
+    private string GetOppositeDirection(string direction)
+    {
+        return direction switch
+        {
+            "North" => "South",
+            "South" => "North",
+            "East" => "West",
+            "West" => "East",
+            _ => ""
+        };
+    }
+
+    /// <summary>
+    /// Manage connections for existing rooms - allows connecting/disconnecting rooms
+    /// </summary>
+    public void ManageRoomConnections()
+    {
+        try
+        {
+            logger.LogInformation("User selected Manage Room Connections");
+            AnsiConsole.MarkupLine("[yellow]=== Manage Room Connections ===[/]");
+
+            var rooms = context.Rooms.ToList();
+
+            if (rooms.Count < 2)
+            {
+                AnsiConsole.MarkupLine("[red]Need at least 2 rooms to create connections.[/]");
+                PressAnyKey();
+                return;
+            }
+
+            // Display all rooms with their current connections
+            var roomTable = new Table();
+            roomTable.Title = new TableTitle("[cyan]Available Rooms[/]");
+            roomTable.AddColumn("ID");
+            roomTable.AddColumn("Name");
+            roomTable.AddColumn("Coordinates");
+            roomTable.AddColumn("Exits");
+
+            foreach (var r in rooms)
+            {
+                var exits = new List<string>();
+                if (r.NorthRoomId.HasValue) exits.Add($"N→{r.NorthRoomId}");
+                if (r.SouthRoomId.HasValue) exits.Add($"S→{r.SouthRoomId}");
+                if (r.EastRoomId.HasValue) exits.Add($"E→{r.EastRoomId}");
+                if (r.WestRoomId.HasValue) exits.Add($"W→{r.WestRoomId}");
+
+                roomTable.AddRow(
+                    r.Id.ToString(),
+                    r.Name,
+                    $"({r.X}, {r.Y})",
+                    exits.Any() ? string.Join(", ", exits) : "[dim]none[/]"
+                );
+            }
+
+            AnsiConsole.Write(roomTable);
+            AnsiConsole.WriteLine();
+
+            // Select room to modify
+            var roomId = AnsiConsole.Ask<int>("Enter room [green]ID[/] to manage connections for:");
+            var selectedRoom = context.Rooms.Find(roomId);
+
+            if (selectedRoom == null)
+            {
+                AnsiConsole.MarkupLine($"[red]Room with ID {roomId} not found.[/]");
+                PressAnyKey();
+                return;
+            }
+
+            AnsiConsole.MarkupLine($"\n[cyan]Managing connections for: {selectedRoom.Name}[/] (ID: {selectedRoom.Id})");
+            AnsiConsole.MarkupLine($"[dim]Coordinates: ({selectedRoom.X}, {selectedRoom.Y})[/]\n");
+
+            // Show current connections
+            DisplayCurrentConnections(selectedRoom);
+
+            // Ask what to do
+            var action = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("What would you like to do?")
+                    .AddChoices(new[]
+                    {
+                        "Auto-connect to adjacent rooms",
+                        "Manually add/modify connections",
+                        "Remove a connection",
+                        "Cancel"
+                    }));
+
+            var otherRooms = rooms.Where(r => r.Id != selectedRoom.Id).ToList();
+
+            switch (action)
+            {
+                case "Auto-connect to adjacent rooms":
+                    AutoConnectAdjacentRooms(selectedRoom, otherRooms);
+                    break;
+                case "Manually add/modify connections":
+                    ConfigureManualConnections(selectedRoom, otherRooms);
+                    break;
+                case "Remove a connection":
+                    RemoveConnection(selectedRoom);
+                    break;
+                case "Cancel":
+                    AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
+                    PressAnyKey();
+                    return;
+            }
+
+            context.SaveChanges();
+            logger.LogInformation("Room connections updated for {RoomName}", selectedRoom.Name);
+
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[green]Connections updated successfully![/]");
+            DisplayCurrentConnections(selectedRoom);
+
+            PressAnyKey();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error managing room connections");
+            AnsiConsole.MarkupLine($"[red]Error: {ex.Message}[/]");
+            PressAnyKey();
+        }
+    }
+
+    private void DisplayCurrentConnections(Room room)
+    {
+        AnsiConsole.MarkupLine("[yellow]Current Connections:[/]");
+        var hasConnections = false;
+
+        if (room.NorthRoomId.HasValue)
+        {
+            var northRoom = context.Rooms.Find(room.NorthRoomId.Value);
+            AnsiConsole.MarkupLine($"  [cyan]North[/] → {northRoom?.Name ?? "Unknown"} (ID: {room.NorthRoomId})");
+            hasConnections = true;
+        }
+
+        if (room.SouthRoomId.HasValue)
+        {
+            var southRoom = context.Rooms.Find(room.SouthRoomId.Value);
+            AnsiConsole.MarkupLine($"  [cyan]South[/] → {southRoom?.Name ?? "Unknown"} (ID: {room.SouthRoomId})");
+            hasConnections = true;
+        }
+
+        if (room.EastRoomId.HasValue)
+        {
+            var eastRoom = context.Rooms.Find(room.EastRoomId.Value);
+            AnsiConsole.MarkupLine($"  [cyan]East[/] → {eastRoom?.Name ?? "Unknown"} (ID: {room.EastRoomId})");
+            hasConnections = true;
+        }
+
+        if (room.WestRoomId.HasValue)
+        {
+            var westRoom = context.Rooms.Find(room.WestRoomId.Value);
+            AnsiConsole.MarkupLine($"  [cyan]West[/] → {westRoom?.Name ?? "Unknown"} (ID: {room.WestRoomId})");
+            hasConnections = true;
+        }
+
+        if (!hasConnections)
+        {
+            AnsiConsole.MarkupLine("  [dim]No connections[/]");
+        }
+
+        AnsiConsole.WriteLine();
+    }
+
+    private void AutoConnectAdjacentRooms(Room room, List<Room> otherRooms)
+    {
+        var northRoom = otherRooms.FirstOrDefault(r => r.X == room.X && r.Y == room.Y + 1);
+        var southRoom = otherRooms.FirstOrDefault(r => r.X == room.X && r.Y == room.Y - 1);
+        var eastRoom = otherRooms.FirstOrDefault(r => r.X == room.X + 1 && r.Y == room.Y);
+        var westRoom = otherRooms.FirstOrDefault(r => r.X == room.X - 1 && r.Y == room.Y);
+
+        var connectionsMade = 0;
+
+        if (northRoom != null)
+        {
+            room.NorthRoomId = northRoom.Id;
+            northRoom.SouthRoomId = room.Id;
+            AnsiConsole.MarkupLine($"[green]✓[/] Connected North to [cyan]{northRoom.Name}[/]");
+            connectionsMade++;
+        }
+
+        if (southRoom != null)
+        {
+            room.SouthRoomId = southRoom.Id;
+            southRoom.NorthRoomId = room.Id;
+            AnsiConsole.MarkupLine($"[green]✓[/] Connected South to [cyan]{southRoom.Name}[/]");
+            connectionsMade++;
+        }
+
+        if (eastRoom != null)
+        {
+            room.EastRoomId = eastRoom.Id;
+            eastRoom.WestRoomId = room.Id;
+            AnsiConsole.MarkupLine($"[green]✓[/] Connected East to [cyan]{eastRoom.Name}[/]");
+            connectionsMade++;
+        }
+
+        if (westRoom != null)
+        {
+            room.WestRoomId = westRoom.Id;
+            westRoom.EastRoomId = room.Id;
+            AnsiConsole.MarkupLine($"[green]✓[/] Connected West to [cyan]{westRoom.Name}[/]");
+            connectionsMade++;
+        }
+
+        if (connectionsMade == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No adjacent rooms found to auto-connect.[/]");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[green]Made {connectionsMade} automatic connection(s).[/]");
+        }
+    }
+
+    private void RemoveConnection(Room room)
+    {
+        var connections = new List<string>();
+        if (room.NorthRoomId.HasValue) connections.Add("North");
+        if (room.SouthRoomId.HasValue) connections.Add("South");
+        if (room.EastRoomId.HasValue) connections.Add("East");
+        if (room.WestRoomId.HasValue) connections.Add("West");
+
+        if (!connections.Any())
+        {
+            AnsiConsole.MarkupLine("[yellow]No connections to remove.[/]");
+            return;
+        }
+
+        connections.Add("Cancel");
+
+        var direction = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("Which connection to remove?")
+                .AddChoices(connections));
+
+        if (direction == "Cancel") return;
+
+        Room? targetRoom = null;
+        string reverseDirection = GetOppositeDirection(direction);
+
+        switch (direction)
+        {
+            case "North":
+                targetRoom = context.Rooms.Find(room.NorthRoomId!.Value);
+                room.NorthRoomId = null;
+                if (targetRoom != null) targetRoom.SouthRoomId = null;
+                break;
+            case "South":
+                targetRoom = context.Rooms.Find(room.SouthRoomId!.Value);
+                room.SouthRoomId = null;
+                if (targetRoom != null) targetRoom.NorthRoomId = null;
+                break;
+            case "East":
+                targetRoom = context.Rooms.Find(room.EastRoomId!.Value);
+                room.EastRoomId = null;
+                if (targetRoom != null) targetRoom.WestRoomId = null;
+                break;
+            case "West":
+                targetRoom = context.Rooms.Find(room.WestRoomId!.Value);
+                room.WestRoomId = null;
+                if (targetRoom != null) targetRoom.EastRoomId = null;
+                break;
+        }
+
+        AnsiConsole.MarkupLine($"[green]✓[/] Removed {direction} connection");
+        if (targetRoom != null)
+        {
+            AnsiConsole.MarkupLine($"[green]✓[/] Removed reverse {reverseDirection} connection from {targetRoom.Name}");
         }
     }
 
@@ -557,6 +1639,10 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
             var room = context.Rooms
                 .Include(r => r.Players)
                 .Include(r => r.Monsters)
+                .Include(r => r.NorthRoom)
+                .Include(r => r.SouthRoom)
+                .Include(r => r.EastRoom)
+                .Include(r => r.WestRoom)
                 .FirstOrDefault(r => r.Id == roomId);
 
             if (room == null)
@@ -576,7 +1662,7 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
 
             AnsiConsole.WriteLine();
 
-            if (room.Players != null && room.Players.Any())
+            if (room.Players.Any())
             {
                 AnsiConsole.MarkupLine("[green]Characters in this room:[/]");
                 var playerTable = new Table();
@@ -598,7 +1684,7 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
 
             AnsiConsole.WriteLine();
 
-            if (room.Monsters != null && room.Monsters.Any())
+            if (room.Monsters.Any())
             {
                 AnsiConsole.MarkupLine("[red]Monsters in this room:[/]");
                 var monsterTable = new Table();
@@ -647,14 +1733,162 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
     /// </summary>
     public void ListCharactersInRoomByAttribute()
     {
-        logger.LogInformation("User selected List Characters in Room by Attribute");
-        AnsiConsole.MarkupLine("[yellow]=== List Characters in Room by Attribute ===[/]");
+        try
+        {
+            logger.LogInformation("User selected List Characters in Room by Attribute");
+            AnsiConsole.MarkupLine("[yellow]=== List Characters in Room by Attribute ===[/]");
 
-        // TODO: Implement this method
-        AnsiConsole.MarkupLine("[red]This feature is not yet implemented.[/]");
-        AnsiConsole.MarkupLine("[yellow]TODO: Find characters in a room matching specific criteria.[/]");
+            // Get all rooms with players
+            var rooms = context.Rooms
+                .Include(r => r.Players)
+                .Where(r => r.Players.Any())
+                .ToList();
 
-        PressAnyKey();
+            if (!rooms.Any())
+            {
+                AnsiConsole.MarkupLine("[yellow]No rooms with characters found.[/]");
+                PressAnyKey();
+                return;
+            }
+
+            // Display rooms to choose from
+            var roomTable = new Table();
+            roomTable.Title = new TableTitle("[cyan]Rooms with Characters[/]");
+            roomTable.AddColumn("ID");
+            roomTable.AddColumn("Room Name");
+            roomTable.AddColumn("Character Count");
+
+            foreach (var room in rooms)
+            {
+                roomTable.AddRow(
+                    room.Id.ToString(),
+                    room.Name,
+                    room.Players.Count.ToString()
+                );
+            }
+
+            AnsiConsole.Write(roomTable);
+            AnsiConsole.WriteLine();
+
+            // Select room
+            var roomId = AnsiConsole.Ask<int>("Enter [green]Room ID[/] to search in:");
+            var selectedRoom = rooms.FirstOrDefault(r => r.Id == roomId);
+
+            if (selectedRoom == null)
+            {
+                AnsiConsole.MarkupLine($"[red]Room with ID {roomId} not found.[/]");
+                PressAnyKey();
+                return;
+            }
+
+            // Select search criteria
+            var criteria = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("Select [green]search criteria[/]:")
+                    .AddChoices(new[] { "Health", "Experience", "Name" }));
+
+            List<Player> results;
+            string searchDescription;
+
+            switch (criteria)
+            {
+                case "Health":
+                    var healthOperator = AnsiConsole.Prompt(
+                        new SelectionPrompt<string>()
+                            .Title("Select [green]comparison[/]:")
+                            .AddChoices(new[] { "Greater than", "Less than", "Equal to" }));
+
+                    var healthValue = AnsiConsole.Ask<int>("Enter [green]health value[/]:");
+
+                    results = healthOperator switch
+                    {
+                        "Greater than" => selectedRoom.Players.Where(p => p.Health > healthValue).ToList(),
+                        "Less than" => selectedRoom.Players.Where(p => p.Health < healthValue).ToList(),
+                        "Equal to" => selectedRoom.Players.Where(p => p.Health == healthValue).ToList(),
+                        _ => new List<Player>()
+                    };
+
+                    searchDescription = $"Health {healthOperator.ToLower()} {healthValue}";
+                    break;
+
+                case "Experience":
+                    var expOperator = AnsiConsole.Prompt(
+                        new SelectionPrompt<string>()
+                            .Title("Select [green]comparison[/]:")
+                            .AddChoices(new[] { "Greater than", "Less than", "Equal to" }));
+
+                    var expValue = AnsiConsole.Ask<int>("Enter [green]experience value[/]:");
+
+                    results = expOperator switch
+                    {
+                        "Greater than" => selectedRoom.Players.Where(p => p.Experience > expValue).ToList(),
+                        "Less than" => selectedRoom.Players.Where(p => p.Experience < expValue).ToList(),
+                        "Equal to" => selectedRoom.Players.Where(p => p.Experience == expValue).ToList(),
+                        _ => new List<Player>()
+                    };
+
+                    searchDescription = $"Experience {expOperator.ToLower()} {expValue}";
+                    break;
+
+                case "Name":
+                    var nameSearch = AnsiConsole.Ask<string>("Enter [green]name[/] (or part of name) to search:");
+
+                    results = selectedRoom.Players
+                        .Where(p => p.Name.Contains(nameSearch, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    searchDescription = $"Name contains '{nameSearch}'";
+                    break;
+
+                default:
+                    results = new List<Player>();
+                    searchDescription = "Unknown";
+                    break;
+            }
+
+            // Display results
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine($"[cyan]Search Results in {selectedRoom.Name}:[/]");
+            AnsiConsole.MarkupLine($"[dim]Criteria: {searchDescription}[/]");
+            AnsiConsole.WriteLine();
+
+            if (!results.Any())
+            {
+                AnsiConsole.MarkupLine("[yellow]No characters found matching the criteria.[/]");
+            }
+            else
+            {
+                var resultsTable = new Table();
+                resultsTable.Title = new TableTitle($"[green]Found {results.Count} Character(s)[/]");
+                resultsTable.AddColumn("ID");
+                resultsTable.AddColumn("Name");
+                resultsTable.AddColumn("Health");
+                resultsTable.AddColumn("Experience");
+
+                foreach (var player in results)
+                {
+                    resultsTable.AddRow(
+                        player.Id.ToString(),
+                        player.Name,
+                        player.Health.ToString(),
+                        player.Experience.ToString()
+                    );
+                }
+
+                AnsiConsole.Write(resultsTable);
+
+                logger.LogInformation("Found {Count} characters in room {RoomName} matching criteria: {Criteria}",
+                    results.Count, selectedRoom.Name, searchDescription);
+            }
+
+            PressAnyKey();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error listing characters in room by attribute");
+            AnsiConsole.MarkupLine($"[red]Error: {ex.Message}[/]");
+            PressAnyKey();
+        }
     }
 
     /// <summary>
@@ -671,14 +1905,118 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
     /// </summary>
     public void ListAllRoomsWithCharacters()
     {
-        logger.LogInformation("User selected List All Rooms with Characters");
-        AnsiConsole.MarkupLine("[yellow]=== List All Rooms with Characters ===[/]");
+        try
+        {
+            logger.LogInformation("User selected List All Rooms with Characters");
+            AnsiConsole.MarkupLine("[yellow]=== List All Rooms with Characters ===[/]");
+            AnsiConsole.WriteLine();
 
-        // TODO: Implement this method
-        AnsiConsole.MarkupLine("[red]This feature is not yet implemented.[/]");
-        AnsiConsole.MarkupLine("[yellow]TODO: Group and display all characters by their rooms.[/]");
+            // Get all rooms with their players
+            var rooms = context.Rooms
+                .Include(r => r.Players)
+                .OrderBy(r => r.Name)
+                .ToList();
 
-        PressAnyKey();
+            if (!rooms.Any())
+            {
+                AnsiConsole.MarkupLine("[yellow]No rooms found in the database.[/]");
+                PressAnyKey();
+                return;
+            }
+
+            int totalRooms = rooms.Count;
+            int roomsWithCharacters = rooms.Count(r => r.Players.Any());
+            int totalCharacters = rooms.Sum(r => r.Players.Count);
+
+            // Display summary
+            var summaryPanel = new Panel(
+                $"[cyan]Total Rooms:[/] {totalRooms}\n" +
+                $"[green]Rooms with Characters:[/] {roomsWithCharacters}\n" +
+                $"[yellow]Total Characters:[/] {totalCharacters}"
+            )
+            {
+                Header = new PanelHeader("[bold cyan]Summary[/]"),
+                Border = BoxBorder.Rounded
+            };
+            AnsiConsole.Write(summaryPanel);
+            AnsiConsole.WriteLine();
+
+            // Display each room with its characters
+            foreach (var room in rooms)
+            {
+                var roomPanel = new Panel(BuildRoomCharacterList(room))
+                {
+                    Header = new PanelHeader($"[bold yellow]{room.Name}[/]"),
+                    Border = BoxBorder.Rounded
+                };
+
+                AnsiConsole.Write(roomPanel);
+                AnsiConsole.WriteLine();
+            }
+
+            logger.LogInformation("Displayed {RoomCount} rooms with {CharacterCount} total characters",
+                totalRooms, totalCharacters);
+
+            PressAnyKey();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error listing all rooms with characters");
+            AnsiConsole.MarkupLine($"[red]Error: {ex.Message}[/]");
+            PressAnyKey();
+        }
+    }
+
+    private string BuildRoomCharacterList(Room room)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        // Room description
+        sb.AppendLine($"[dim]{room.Description}[/]");
+        sb.AppendLine($"[dim]Location: ({room.X}, {room.Y})[/]");
+        sb.AppendLine();
+
+        // Characters in this room
+        if (room.Players.Any())
+        {
+            sb.AppendLine($"[green]Characters ({room.Players.Count}):[/]");
+
+            var characterTable = new Table();
+            characterTable.Border = TableBorder.Minimal;
+            characterTable.AddColumn("Name");
+            characterTable.AddColumn("Health");
+            characterTable.AddColumn("Experience");
+
+            foreach (var player in room.Players.OrderBy(p => p.Name))
+            {
+                characterTable.AddRow(
+                    $"[cyan]{player.Name}[/]",
+                    player.Health.ToString(),
+                    player.Experience.ToString()
+                );
+            }
+
+            // Render table to string using AnsiConsole
+            var tableString = new System.IO.StringWriter();
+            using (var consoleOut = new System.IO.StringWriter())
+            {
+                // We'll use markup directly instead of trying to render table to string
+                foreach (var player in room.Players.OrderBy(p => p.Name))
+                {
+                    sb.AppendLine(
+                        $"  • [cyan]{player.Name}[/] - " +
+                        $"HP: {player.Health} | " +
+                        $"XP: {player.Experience}"
+                    );
+                }
+            }
+        }
+        else
+        {
+            sb.AppendLine("[dim]No characters in this room[/]");
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>
@@ -697,15 +2035,148 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
     /// </summary>
     public void FindEquipmentLocation()
     {
-        logger.LogInformation("User selected Find Equipment Location");
-        AnsiConsole.MarkupLine("[yellow]=== Find Equipment Location ===[/]");
+        try
+        {
+            logger.LogInformation("User selected Find Equipment Location");
+            AnsiConsole.MarkupLine("[yellow]=== Find Equipment Location ===[/]");
+            AnsiConsole.WriteLine();
 
-        // TODO: Implement this method
-        AnsiConsole.MarkupLine("[red]This feature is not yet implemented.[/]");
-        AnsiConsole.MarkupLine(
-            "[yellow]TODO: Find which character has specific equipment and where they are located.[/]");
+            // Display all available items first
+            var allItems = context.Items.OrderBy(i => i.Name).ToList();
+            
+            if (!allItems.Any())
+            {
+                AnsiConsole.MarkupLine("[red]No items found in the database.[/]");
+                logger.LogWarning("No items found in database");
+                PressAnyKey();
+                return;
+            }
 
-        PressAnyKey();
+            AnsiConsole.MarkupLine("[cyan]Available Items in Database:[/]");
+            var itemsTable = new Table();
+            itemsTable.AddColumn("Name");
+            itemsTable.AddColumn("Type");
+            itemsTable.AddColumn("Attack");
+            itemsTable.AddColumn("Defense");
+            itemsTable.AddColumn("Value");
+
+            foreach (var i in allItems)
+            {
+                itemsTable.AddRow(
+                    $"[green]{i.Name}[/]",
+                    i.Type,
+                    i.Attack.ToString(),
+                    i.Defense.ToString(),
+                    $"{i.Value}g"
+                );
+            }
+
+            AnsiConsole.Write(itemsTable);
+            AnsiConsole.WriteLine();
+
+            // Get item name to search for
+            var itemName = AnsiConsole.Ask<string>("Enter [green]item name[/] to search for:");
+
+            // Search for the item in the Items table (case-insensitive using ToLower which translates to SQL)
+            var itemNameLower = itemName.ToLower();
+            var item = context.Items
+                .FirstOrDefault(i => i.Name.ToLower() == itemNameLower);
+
+            if (item == null)
+            {
+                AnsiConsole.MarkupLine($"[red]Item '{itemName}' not found in the database.[/]");
+                logger.LogWarning("Item search failed - '{ItemName}' not found", itemName);
+                PressAnyKey();
+                return;
+            }
+
+            // Display item details
+            var itemPanel = new Panel(
+                $"[cyan]Name:[/] {item.Name}\n" +
+                $"[yellow]Type:[/] {item.Type}\n" +
+                $"[green]Attack:[/] {item.Attack}\n" +
+                $"[blue]Defense:[/] {item.Defense}\n" +
+                $"[magenta]Value:[/] {item.Value} gold\n" +
+                $"[dim]Weight:[/] {item.Weight} lbs"
+            )
+            {
+                Header = new PanelHeader("[bold cyan]Item Details[/]"),
+                Border = BoxBorder.Rounded
+            };
+            AnsiConsole.Write(itemPanel);
+            AnsiConsole.WriteLine();
+
+            // Find which equipment has this item (either as weapon or armor)
+            var equipmentWithItem = context.Equipments
+                .Where(e => e.WeaponId == item.Id || e.ArmorId == item.Id)
+                .ToList();
+
+            if (!equipmentWithItem.Any())
+            {
+                AnsiConsole.MarkupLine($"[yellow]Item '{item.Name}' exists but is not currently equipped by anyone.[/]");
+                logger.LogInformation("Item '{ItemName}' found but not equipped", item.Name);
+                PressAnyKey();
+                return;
+            }
+
+            // Find players with this equipment
+            var playersWithItem = context.Players
+                .Include(p => p.Equipment)
+                    .ThenInclude(e => e.Weapon)
+                .Include(p => p.Equipment)
+                    .ThenInclude(e => e.Armor)
+                .Include(p => p.Room)
+                .Where(p => p.Equipment != null &&
+                           (p.Equipment.WeaponId == item.Id || p.Equipment.ArmorId == item.Id))
+                .ToList();
+
+            if (!playersWithItem.Any())
+            {
+                AnsiConsole.MarkupLine($"[yellow]Item '{item.Name}' is in an equipment set but not held by any character.[/]");
+                logger.LogInformation("Item '{ItemName}' in equipment but no character found", item.Name);
+                PressAnyKey();
+                return;
+            }
+
+            // Display results
+            AnsiConsole.MarkupLine($"[green]Found {playersWithItem.Count} character(s) with '{item.Name}':[/]");
+            AnsiConsole.WriteLine();
+
+            foreach (var player in playersWithItem)
+            {
+                var equipmentSlot = player.Equipment.WeaponId == item.Id ? "Weapon" : "Armor";
+                var locationName = player.Room?.Name ?? "Unknown Location";
+                var coordinates = player.Room != null ? $"({player.Room.X}, {player.Room.Y})" : "N/A";
+
+                var resultPanel = new Panel(
+                    $"[cyan]Character:[/] [bold]{player.Name}[/]\n" +
+                    $"[yellow]Equipment Slot:[/] {equipmentSlot}\n" +
+                    $"[green]Location:[/] {locationName}\n" +
+                    $"[dim]Coordinates:[/] {coordinates}\n" +
+                    $"[blue]Health:[/] {player.Health}\n" +
+                    $"[magenta]Experience:[/] {player.Experience}"
+                )
+                {
+                    Header = new PanelHeader($"[bold green]{player.Name}[/]"),
+                    Border = BoxBorder.Rounded
+                };
+
+                AnsiConsole.Write(resultPanel);
+                AnsiConsole.WriteLine();
+
+                logger.LogInformation(
+                    "Found item '{ItemName}' equipped by {PlayerName} as {Slot} in {Location}",
+                    item.Name, player.Name, equipmentSlot, locationName);
+            }
+
+            PressAnyKey();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error finding equipment location");
+            AnsiConsole.MarkupLine($"[red]Error: {ex.Message}[/]");
+            PressAnyKey();
+        }
     }
 
     #endregion

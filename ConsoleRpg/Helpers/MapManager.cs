@@ -284,12 +284,12 @@ namespace ConsoleRpg.Helpers
             // Room description
             sb.AppendLine($"[bold]{room.Description}[/]");
 
-            // Exits
+            // Exits - check ID properties which are always loaded
             var exits = new List<string>();
-            if (room.NorthRoom != null) exits.Add("[cyan]N[/]orth");
-            if (room.SouthRoom != null) exits.Add("[cyan]S[/]outh");
-            if (room.EastRoom != null) exits.Add("[cyan]E[/]ast");
-            if (room.WestRoom != null) exits.Add("[cyan]W[/]est");
+            if (room.NorthRoomId.HasValue) exits.Add("[cyan]N[/]orth");
+            if (room.SouthRoomId.HasValue) exits.Add("[cyan]S[/]outh");
+            if (room.EastRoomId.HasValue) exits.Add("[cyan]E[/]ast");
+            if (room.WestRoomId.HasValue) exits.Add("[cyan]W[/]est");
 
             if (exits.Any())
             {
@@ -456,14 +456,14 @@ namespace ConsoleRpg.Helpers
         {
             var actions = new List<string>();
 
-            // Navigation actions
-            if (currentRoom?.NorthRoom != null)
+            // Navigation actions - check ID properties instead of navigation properties
+            if (currentRoom?.NorthRoomId.HasValue == true)
                 actions.Add("Go North");
-            if (currentRoom?.SouthRoom != null)
+            if (currentRoom?.SouthRoomId.HasValue == true)
                 actions.Add("Go South");
-            if (currentRoom?.EastRoom != null)
+            if (currentRoom?.EastRoomId.HasValue == true)
                 actions.Add("Go East");
-            if (currentRoom?.WestRoom != null)
+            if (currentRoom?.WestRoomId.HasValue == true)
                 actions.Add("Go West");
 
             // Combat actions (only if monsters present)
@@ -498,15 +498,15 @@ namespace ConsoleRpg.Helpers
         {
             var actions = new List<string>();
 
-            // Navigation
+            // Navigation - check ID properties
             actions.Add("[cyan]Navigation:[/]");
-            if (currentRoom?.NorthRoom != null)
+            if (currentRoom?.NorthRoomId.HasValue == true)
                 actions.Add("  [white]N[/] - Go North");
-            if (currentRoom?.SouthRoom != null)
+            if (currentRoom?.SouthRoomId.HasValue == true)
                 actions.Add("  [white]S[/] - Go South");
-            if (currentRoom?.EastRoom != null)
+            if (currentRoom?.EastRoomId.HasValue == true)
                 actions.Add("  [white]E[/] - Go East");
-            if (currentRoom?.WestRoom != null)
+            if (currentRoom?.WestRoomId.HasValue == true)
                 actions.Add("  [white]W[/] - Go West");
 
             // Combat (if monsters present)
