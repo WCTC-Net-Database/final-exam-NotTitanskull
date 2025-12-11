@@ -1,6 +1,7 @@
 using ConsoleRpgEntities.Data;
 using ConsoleRpgEntities.Models.Characters;
 using ConsoleRpgEntities.Models.Characters.Monsters;
+using ConsoleRpgEntities.Models.Equipments;
 using ConsoleRpgEntities.Models.Rooms;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -37,12 +38,41 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
                 Experience = experience
             };
 
+            // Ask if player wants to equip starting gear
+            AnsiConsole.WriteLine();
+            if (AnsiConsole.Confirm("[yellow]Would you like to equip starting gear?[/]"))
+            {
+                EquipStartingGear(player);
+            }
+
             context.Players.Add(player);
             context.SaveChanges();
 
             logger.LogInformation("Character {Name} added to database with Id {Id}", name, player.Id);
             AnsiConsole.MarkupLine($"[green]Character '{name}' added successfully![/]");
-            Thread.Sleep(1000);
+            
+            // Show equipped items if any - reload to get navigation properties
+            if (player.Equipment != null)
+            {
+                // Reload player with equipment to get navigation properties properly loaded
+                var reloadedPlayer = context.Players
+                    .Include(p => p.Equipment)
+                        .ThenInclude(e => e.Weapon)
+                    .Include(p => p.Equipment)
+                        .ThenInclude(e => e.Armor)
+                    .FirstOrDefault(p => p.Id == player.Id);
+
+                if (reloadedPlayer?.Equipment != null)
+                {
+                    AnsiConsole.MarkupLine($"[cyan]Equipped with:[/]");
+                    if (reloadedPlayer.Equipment.Weapon != null)
+                        AnsiConsole.MarkupLine($"  • Weapon: {reloadedPlayer.Equipment.Weapon.Name.EscapeMarkup()} (Attack: {reloadedPlayer.Equipment.Weapon.Attack})");
+                    if (reloadedPlayer.Equipment.Armor != null)
+                        AnsiConsole.MarkupLine($"  • Armor: {reloadedPlayer.Equipment.Armor.Name.EscapeMarkup()} (Defense: {reloadedPlayer.Equipment.Armor.Defense})");
+                }
+            }
+            
+            Thread.Sleep(1500);
         }
         catch (Exception ex)
         {
@@ -2182,6 +2212,127 @@ public class AdminService(GameContext context, ILogger<AdminService> logger)
     #endregion
 
     #region Helper Methods
+
+    /// <summary>
+    /// Allows player to select starting weapon and armor during character creation
+    /// Prevents duplicate equipment assignments to the same character
+    /// </summary>
+    private void EquipStartingGear(Player player)
+    {
+        try
+        {
+            AnsiConsole.MarkupLine("[cyan]=== Select Starting Equipment ===[/]");
+            
+            // Create Equipment object if not exists
+            var equipment = new Equipment();
+            
+            // Select Weapon
+            var weapons = context.Items
+                .Where(i => i.Type == "Weapon")
+                .OrderBy(i => i.Name)
+                .ToList();
+
+            if (weapons.Any())
+            {
+                AnsiConsole.WriteLine();
+                var weaponTable = new Table();
+                weaponTable.AddColumn("Name");
+                weaponTable.AddColumn("Attack");
+                weaponTable.AddColumn("Value");
+
+                foreach (var w in weapons)
+                {
+                    weaponTable.AddRow(w.Name.EscapeMarkup(), w.Attack.ToString(), $"{w.Value}g");
+                }
+
+                AnsiConsole.Write(weaponTable);
+                AnsiConsole.WriteLine();
+
+                // Create a selection list with Item objects instead of strings
+                var weaponWithSkip = new List<Item> { new Item { Id = -1, Name = "[Skip - No Weapon]" } };
+                weaponWithSkip.AddRange(weapons);
+
+                var selectedWeaponItem = AnsiConsole.Prompt(
+                    new SelectionPrompt<Item>()
+                        .Title("[yellow]Select starting weapon:[/]")
+                        .PageSize(10)
+                        .AddChoices(weaponWithSkip)
+                        .UseConverter(item => item.Name.EscapeMarkup())
+                );
+
+                if (selectedWeaponItem.Id != -1)
+                {
+                    equipment.WeaponId = selectedWeaponItem.Id;
+                    equipment.Weapon = selectedWeaponItem;
+                    AnsiConsole.MarkupLine($"[green]✓ Equipped: {selectedWeaponItem.Name.EscapeMarkup()}[/]");
+                }
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[yellow]No weapons available in database.[/]");
+            }
+
+            // Select Armor
+            var armors = context.Items
+                .Where(i => i.Type == "Armor")
+                .OrderBy(i => i.Name)
+                .ToList();
+
+            if (armors.Any())
+            {
+                AnsiConsole.WriteLine();
+                var armorTable = new Table();
+                armorTable.AddColumn("Name");
+                armorTable.AddColumn("Defense");
+                armorTable.AddColumn("Value");
+
+                foreach (var a in armors)
+                {
+                    armorTable.AddRow(a.Name.EscapeMarkup(), a.Defense.ToString(), $"{a.Value}g");
+                }
+
+                AnsiConsole.Write(armorTable);
+                AnsiConsole.WriteLine();
+
+                // Create a selection list with Item objects instead of strings
+                var armorWithSkip = new List<Item> { new Item { Id = -1, Name = "[Skip - No Armor]" } };
+                armorWithSkip.AddRange(armors);
+
+                var selectedArmorItem = AnsiConsole.Prompt(
+                    new SelectionPrompt<Item>()
+                        .Title("[yellow]Select starting armor:[/]")
+                        .PageSize(10)
+                        .AddChoices(armorWithSkip)
+                        .UseConverter(item => item.Name.EscapeMarkup())
+                );
+
+                if (selectedArmorItem.Id != -1)
+                {
+                    equipment.ArmorId = selectedArmorItem.Id;
+                    equipment.Armor = selectedArmorItem;
+                    AnsiConsole.MarkupLine($"[green]✓ Equipped: {selectedArmorItem.Name.EscapeMarkup()}[/]");
+                }
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[yellow]No armor available in database.[/]");
+            }
+
+            // Only create equipment if at least one item was selected
+            if (equipment.WeaponId != null || equipment.ArmorId != null)
+            {
+                player.Equipment = equipment;
+                logger.LogInformation("Equipment assigned to player {PlayerName}: Weapon={WeaponId}, Armor={ArmorId}", 
+                    player.Name, equipment.WeaponId, equipment.ArmorId);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error equipping starting gear");
+            AnsiConsole.MarkupLine($"[red]Error selecting equipment: {ex.Message}[/]");
+            AnsiConsole.MarkupLine("[yellow]Character will be created without equipment.[/]");
+        }
+    }
 
     /// <summary>
     /// Helper method for user interaction consistency
