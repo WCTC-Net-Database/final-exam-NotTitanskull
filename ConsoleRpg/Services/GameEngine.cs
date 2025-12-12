@@ -14,28 +14,36 @@ namespace ConsoleRpg.Services;
 /// Main game engine - orchestrates game flow
 /// Uses interfaces for dependencies - follows Dependency Inversion Principle
 /// </summary>
-public class GameEngine(
-    GameContext context,
-    MenuManager menuManager,
-    MapManager mapManager,
-    ExplorationUI explorationUi,
-    IPlayerService playerService,
-    AdminService adminService,
-    ILogger<GameEngine> logger,
-    Player currentPlayer,
-    Room currentRoom)
+public class GameEngine
 {
-    private readonly MapManager _mapManager = mapManager;
+    private readonly GameContext _context;
+    private readonly MenuManager _menuManager;
+    private readonly MapManager _mapManager;
+    private readonly ExplorationUI _explorationUI;
+    private readonly IPlayerService _playerService;  // Now uses interface!
+    private readonly AdminService _adminService;
+    private readonly ILogger<GameEngine> _logger;
 
-    // Now uses interface!
-
-    private Player? _currentPlayer = currentPlayer;
-    private Room _currentRoom = currentRoom;
+    private Player _currentPlayer;
+    private Room _currentRoom;
     private GameMode _currentMode = GameMode.Exploration;
+
+    public GameEngine(GameContext context, MenuManager menuManager, MapManager mapManager,
+                     ExplorationUI explorationUI, IPlayerService playerService,
+                     AdminService adminService, ILogger<GameEngine> logger)
+    {
+        _context = context;
+        _menuManager = menuManager;
+        _mapManager = mapManager;
+        _explorationUI = explorationUI;
+        _playerService = playerService;
+        _adminService = adminService;
+        _logger = logger;
+    }
 
     public void Run()
     {
-        logger.LogInformation("Game engine started");
+        _logger.LogInformation("Game engine started");
 
         // Initialize game - get or create first player
         InitializeGame();
@@ -60,7 +68,7 @@ public class GameEngine(
     private void InitializeGame()
     {
         // Try to get the first player
-        _currentPlayer = context.Players
+        _currentPlayer = _context.Players
             .Include(p => p.Room)
             .Include(p => p.Equipment)
                 .ThenInclude(e => e.Weapon)
@@ -77,7 +85,7 @@ public class GameEngine(
         }
 
         // Get current room or default to first room
-        _currentRoom = _currentPlayer.Room ?? context.Rooms.Include(r => r.Players).Include(r => r.Monsters).FirstOrDefault();
+        _currentRoom = _currentPlayer.Room ?? _context.Rooms.Include(r => r.Players).Include(r => r.Monsters).FirstOrDefault();
 
         if (_currentRoom == null)
         {
@@ -86,7 +94,7 @@ public class GameEngine(
             return;
         }
 
-        logger.LogInformation("Game initialized with player {PlayerName} in room {RoomName}",
+        _logger.LogInformation("Game initialized with player {PlayerName} in room {RoomName}",
             _currentPlayer.Name, _currentRoom.Name);
     }
 
@@ -98,7 +106,7 @@ public class GameEngine(
     private void ExplorationMode()
     {
         // Reload room with all related data
-        _currentRoom = context.Rooms
+        _currentRoom = _context.Rooms
             .Include(r => r.Players)
             .Include(r => r.Monsters)
             .Include(r => r.NorthRoom)
@@ -108,11 +116,11 @@ public class GameEngine(
             .FirstOrDefault(r => r.Id == _currentRoom.Id);
 
         // Get all rooms for map
-        var allRooms = context.Rooms.ToList();
+        var allRooms = _context.Rooms.ToList();
         bool hasMonsters = _currentRoom.Monsters != null && _currentRoom.Monsters.Any();
 
         // Render UI and get player's action choice
-        var selectedAction = explorationUi.RenderAndGetAction(allRooms, _currentRoom);
+        var selectedAction = _explorationUI.RenderAndGetAction(allRooms, _currentRoom);
 
         // Handle the selected action
         HandleExplorationAction(selectedAction, hasMonsters);
@@ -127,41 +135,41 @@ public class GameEngine(
         switch (action)
         {
             case "Go North":
-                HandleMoveResult(playerService.MoveToRoom(_currentPlayer, _currentRoom, _currentRoom.NorthRoomId, "North"));
+                HandleMoveResult(_playerService.MoveToRoom(_currentPlayer, _currentRoom, _currentRoom.NorthRoomId, "North"));
                 break;
             case "Go South":
-                HandleMoveResult(playerService.MoveToRoom(_currentPlayer, _currentRoom, _currentRoom.SouthRoomId, "South"));
+                HandleMoveResult(_playerService.MoveToRoom(_currentPlayer, _currentRoom, _currentRoom.SouthRoomId, "South"));
                 break;
             case "Go East":
-                HandleMoveResult(playerService.MoveToRoom(_currentPlayer, _currentRoom, _currentRoom.EastRoomId, "East"));
+                HandleMoveResult(_playerService.MoveToRoom(_currentPlayer, _currentRoom, _currentRoom.EastRoomId, "East"));
                 break;
             case "Go West":
-                HandleMoveResult(playerService.MoveToRoom(_currentPlayer, _currentRoom, _currentRoom.WestRoomId, "West"));
+                HandleMoveResult(_playerService.MoveToRoom(_currentPlayer, _currentRoom, _currentRoom.WestRoomId, "West"));
                 break;
             case "View Map":
-                explorationUi.AddMessage("[cyan]Viewing map[/]");
-                explorationUi.AddOutput("[cyan]The map is displayed above showing your current location and surroundings.[/]");
+                _explorationUI.AddMessage("[cyan]Viewing map[/]");
+                _explorationUI.AddOutput("[cyan]The map is displayed above showing your current location and surroundings.[/]");
                 break;
             case "View Inventory":
-                HandleActionResult(playerService.ShowInventory(_currentPlayer));
+                HandleActionResult(_playerService.ShowInventory(_currentPlayer));
                 break;
             case "View Character Stats":
-                HandleActionResult(playerService.ShowCharacterStats(_currentPlayer));
+                HandleActionResult(_playerService.ShowCharacterStats(_currentPlayer));
                 break;
             case "Attack Monster":
-                HandleActionResult(playerService.AttackMonster(_currentPlayer, _currentRoom));
+                HandleActionResult(_playerService.AttackMonster(_currentPlayer, _currentRoom));
                 break;
             case "Use Ability": 
-                HandleActionResult(playerService.UseAbilityOnMonster(_currentPlayer, _currentRoom));
+                HandleActionResult(_playerService.UseAbilityOnMonster(_currentPlayer, _currentRoom));
                 break;
             case "Return to Main Menu":
                 _currentMode = GameMode.Admin;
-                explorationUi.AddMessage("[yellow]→ Admin Mode[/]");
-                explorationUi.AddOutput("[yellow]Switching to Admin Mode for database management and testing.[/]");
+                _explorationUI.AddMessage("[yellow]→ Admin Mode[/]");
+                _explorationUI.AddOutput("[yellow]Switching to Admin Mode for database management and testing.[/]");
                 break;
             default:
-                explorationUi.AddMessage($"[red]Unknown action[/]");
-                explorationUi.AddOutput($"[red]Unknown action: {action}[/]");
+                _explorationUI.AddMessage($"[red]Unknown action[/]");
+                _explorationUI.AddOutput($"[red]Unknown action: {action}[/]");
                 break;
         }
     }
@@ -171,8 +179,8 @@ public class GameEngine(
     /// </summary>
     private void HandleMoveResult(ServiceResult<Room> result)
     {
-        explorationUi.AddMessage(result.Message);
-        explorationUi.AddOutput(result.DetailedOutput);
+        _explorationUI.AddMessage(result.Message);
+        _explorationUI.AddOutput(result.DetailedOutput);
 
         if (result.Success && result.Value != null)
         {
@@ -185,8 +193,8 @@ public class GameEngine(
     /// </summary>
     private void HandleActionResult(ServiceResult result)
     {
-        explorationUi.AddMessage(result.Message);
-        explorationUi.AddOutput(result.DetailedOutput);
+        _explorationUI.AddMessage(result.Message);
+        _explorationUI.AddOutput(result.DetailedOutput);
     }
 
     #endregion
@@ -198,7 +206,7 @@ public class GameEngine(
     /// </summary>
     private void AdminMode()
     {
-        menuManager.ShowMainMenu(AdminMenuChoice);
+        _menuManager.ShowMainMenu(AdminMenuChoice);
     }
 
     private void AdminMenuChoice(string choice)
@@ -213,24 +221,24 @@ public class GameEngine(
 
             // Basic Features
             case "1":
-                adminService.AddCharacter();
+                _adminService.AddCharacter();
                 break;
             case "2":
-                adminService.EditCharacter();
+                _adminService.EditCharacter();
                 break;
             case "3":
-                adminService.DisplayAllCharacters();
+                _adminService.DisplayAllCharacters();
                 break;
             case "4":
-                adminService.SearchCharacterByName();
+                _adminService.SearchCharacterByName();
                 break;
 
             // C-Level Features
             case "5":
-                adminService.AddAbilityToCharacter();
+                _adminService.AddAbilityToCharacter();
                 break;
             case "6":
-                adminService.DisplayCharacterAbilities();
+                _adminService.DisplayCharacterAbilities();
                 break;
             case "7":
                 // Attack with ability - redirect to exploration mode
@@ -240,13 +248,13 @@ public class GameEngine(
 
             // B-Level Features
             case "8":
-                adminService.AddRoom();
+                _adminService.AddRoom();
                 break;
             case "9":
-                adminService.DisplayRoomDetails();
+                _adminService.DisplayRoomDetails();
                 break;
             case "10":
-                adminService.ManageRoomConnections();
+                _adminService.ManageRoomConnections();
                 break;
             case "11":
                 // Navigate rooms - redirect to exploration mode
@@ -256,13 +264,13 @@ public class GameEngine(
 
             // A-Level Features
             case "12":
-                adminService.ListCharactersInRoomByAttribute();
+                _adminService.ListCharactersInRoomByAttribute();
                 break;
             case "13":
-                adminService.ListAllRoomsWithCharacters();
+                _adminService.ListAllRoomsWithCharacters();
                 break;
             case "14":
-                adminService.FindEquipmentLocation();
+                _adminService.FindEquipmentLocation();
                 break;
 
             default:
@@ -281,12 +289,12 @@ public class GameEngine(
     /// </summary>
     private void ExploreWorld()
     {
-        logger.LogInformation("User selected Explore World - switching to Exploration Mode");
+        _logger.LogInformation("User selected Explore World - switching to Exploration Mode");
 
         // Simply switch to exploration mode
         _currentMode = GameMode.Exploration;
-        explorationUi.AddMessage("[green]Entered world[/]");
-        explorationUi.AddOutput("[green]Welcome to the world! Use the menu below to explore, fight monsters, and manage your character.[/]");
+        _explorationUI.AddMessage("[green]Entered world[/]");
+        _explorationUI.AddOutput("[green]Welcome to the world! Use the menu below to explore, fight monsters, and manage your character.[/]");
     }
 
     #endregion
