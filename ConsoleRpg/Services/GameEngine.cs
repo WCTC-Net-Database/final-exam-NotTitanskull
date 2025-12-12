@@ -29,7 +29,7 @@ public class GameEngine(
 
     // Now uses interface!
 
-    private Player _currentPlayer = currentPlayer;
+    private Player? _currentPlayer = currentPlayer;
     private Room _currentRoom = currentRoom;
     private GameMode _currentMode = GameMode.Exploration;
 
